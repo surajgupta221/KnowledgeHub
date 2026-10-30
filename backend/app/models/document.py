@@ -16,7 +16,7 @@ class Document(Base):
     owner_id = Column(String(255), nullable=False, index=True)
     filename = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
-    metadata = Column(Text, nullable=True)  # JSON string
+    doc_metadata = Column(Text, nullable=True)  # JSON string (renamed to avoid reserved name)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

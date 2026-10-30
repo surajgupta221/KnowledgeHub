@@ -37,10 +37,19 @@ def test_chat_stream_endpoint_exists():
     """Verify chat stream endpoint is registered."""
     app = create_app()
 
-    routes = [route.path for route in app.routes]
-    # Should have /api/chat/stream endpoint once integrated
-    # For now, verify app creates without error
-    assert app is not None
+    # Extract all routes, handling included routers
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            routes.append(route.path)
+        elif hasattr(route, 'original_router'):
+            # _IncludedRouter case
+            router = route.original_router
+            for subroute in router.routes:
+                routes.append(subroute.path)
+    
+    # Should have /api/chat/stream endpoint
+    assert "/api/chat/stream" in routes
 
 
 def test_chat_stream_auth_required():

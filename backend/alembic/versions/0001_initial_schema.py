@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column('owner_id', sa.String(length=255), nullable=False),
         sa.Column('filename', sa.String(length=255), nullable=False),
         sa.Column('content', sa.Text(), nullable=False),
-        sa.Column('metadata', sa.Text(), nullable=True),
+        sa.Column('doc_metadata', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint('id')

@@ -13,11 +13,18 @@ def test_router_has_all_endpoints():
     """Verify all required endpoints exist."""
     app = create_app()
     
-    # Check that routes are registered
-    routes = [route.path for route in app.routes]
+    # Extract all routes, handling included routers
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            routes.append(route.path)
+        elif hasattr(route, 'original_router'):
+            # _IncludedRouter case
+            router = route.original_router
+            for subroute in router.routes:
+                routes.append(subroute.path)
     
-    # Should have document endpoints (once we integrate them)
-    # For now, just verify health endpoint exists
+    # Should have health endpoint
     assert "/health" in routes
 
 

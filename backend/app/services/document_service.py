@@ -26,20 +26,20 @@ class DocumentService:
         self.repository = DocumentRepository(db)
 
     async def create_document(
-        self, title: str, content: str, owner_id: str
+        self, filename: str, content: str, owner_id: str
     ) -> Document:
         """
         Create a new document owned by the current user.
 
         Args:
-            title: Document title
+            filename: Document filename
             content: Document content
             owner_id: ID of the user creating the document
 
         Returns:
             Document ORM model (wrapped in schema by router)
         """
-        doc = Document(title=title, content=content, owner_id=owner_id)
+        doc = Document(filename=filename, content=content, owner_id=owner_id)
         self.db.add(doc)
         await self.db.commit()
         await self.db.refresh(doc)
@@ -122,3 +122,29 @@ class DocumentService:
         await self.db.delete(doc)
         await self.db.commit()
         return True
+
+    async def create_summary_job(self, doc_id: int, current_user_id: str) -> Optional[int]:
+        """
+        Create a background job to summarize a document.
+
+        Returns job ID if document exists and user owns it, None otherwise.
+
+        Args:
+            doc_id: Document ID
+            current_user_id: User requesting summary
+
+        Returns:
+            Job ID or None if document not found or not owned
+        """
+        from app.services.job_service import JobService
+
+        doc = await self.get_document(doc_id, current_user_id)
+        if not doc:
+            return None
+
+        job_service = JobService(self.db)
+        job = await job_service.create_summary_job(doc_id, current_user_id)
+        await job_service.commit()
+
+        return job.id
+

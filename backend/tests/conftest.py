@@ -1,12 +1,13 @@
 """Pytest configuration and fixtures."""
 
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.config import settings
+from app.models import Base
 
 
 @pytest.fixture
@@ -21,12 +22,32 @@ def client(app):
     return TestClient(app)
 
 
-@pytest.fixture
-async def async_session_factory():
-    """Create async session factory for testing."""
-    engine = create_async_engine(settings.database_url, echo=False)
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
+@pytest_asyncio.fixture
+async def db_engine():
+    """Create in-memory SQLite async engine for testing."""
+    # Use SQLite for testing (async driver)
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
     )
-    yield async_session
+    
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    yield engine
+    
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(db_engine):
+    """Create async session for testing."""
+    async_session_local = async_sessionmaker(
+        db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    
+    async with async_session_local() as session:
+        yield session
+

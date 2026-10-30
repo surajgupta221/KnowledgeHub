@@ -138,71 +138,58 @@ async def get_document(
         raise HTTPException(status_code=500, detail="Failed to retrieve document")
 
 
-@router.get("/{doc_id}/summary", response_model=DocumentSummaryResponse)
+@router.post("/{doc_id}/summary", status_code=202)
 async def request_document_summary(
     doc_id: int,
-    style: Literal["executive", "technical", "summary"] = Query("summary"),
     current_user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> DocumentSummaryResponse:
+) -> dict:
     """
-    Request a document summary.
+    Request background summarization of a document.
 
-    - Returns 202 Accepted with jobId (background job, not blocking)
     - Verifies current user owns the document
-    - `style` parameter restricted to enum values (no injection)
-    - LLM call delegated to job queue (see Step 3.1)
-
-    For now, this endpoint returns a stub showing the structure.
-    In production, it will:
-    1. Check document ownership
-    2. Enqueue summary job
-    3. Return 202 + jobId
-    4. Client polls GET /api/jobs/{jobId} for result
-
-    NOTE: This is a placeholder until Step 3.1 (background job queue) is implemented.
+    - Creates a background job
+    - Returns 202 Accepted with job_id in Location header
+    - Client polls GET /api/jobs/{job_id} for status
     """
     try:
         service = DocumentService(db)
-        doc = await service.get_document(
-            doc_id=doc_id,
-            current_user_id=current_user_id,
-        )
-        if not doc:
+        job_id = await service.create_summary_job(doc_id, current_user_id)
+
+        if not job_id:
             logger.warning(
                 "Document not found for summary",
                 extra={"user_id": current_user_id, "doc_id": doc_id},
             )
             raise HTTPException(status_code=404, detail="Document not found")
 
+        # Enqueue job for background processing
+        from app.workers.job_worker import get_worker
+        worker = get_worker()
+        await worker.enqueue_job(job_id)
+
         logger.info(
-            "Summary requested",
+            "Summary job created",
             extra={
                 "user_id": current_user_id,
                 "doc_id": doc_id,
-                "style": style,
+                "job_id": job_id,
             },
         )
 
-        # TODO (Step 3.1): Implement background job queue
-        # For now, return stub with 202 Accepted
-        return DocumentSummaryResponse(
-            doc_id=doc_id,
-            summary="[Pending: Background job queue not yet implemented]",
-            style=style,
-        )
+        return {"job_id": job_id, "status": "pending"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
-            "Failed to request summary",
+            "Failed to create summary job",
             extra={
                 "user_id": current_user_id,
                 "doc_id": doc_id,
                 "error": str(e),
             },
         )
-        raise HTTPException(status_code=500, detail="Failed to request summary")
+        raise HTTPException(status_code=500, detail="Failed to create summary job")
 
 
 @router.delete("/{doc_id}", status_code=204)
