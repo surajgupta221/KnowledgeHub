@@ -1093,3 +1093,166 @@ All 57 tests pass:
 - Citation validation (ensure retrieved chunks are from selected documents)
 - Integrate with chat service (retrieve context before sending to LLM)
 
+---
+
+## STEP 3.4: RAG Pipeline (Chunking, Embedding, Retrieval)
+
+### Objective
+Implement a retrieval-augmented generation (RAG) pipeline to:
+1. Split documents into semantic chunks with overlap
+2. Generate embeddings for chunks via mock LLM
+3. Retrieve relevant chunks using cosine similarity
+4. Integrate retrieval into ChatService to build context
+
+### Services Implemented
+
+1. **ChunkingService** (`backend/app/services/chunking_service.py`)
+   - Splits document text into sentences using regex: `(?<=[.!?])\s+`
+   - Groups sentences into chunks targeting ~500 tokens with 50-token overlap
+   - Handles edge cases: empty text, very long sentences, whitespace normalization
+   - Exports `chunk_text(text, document_id) -> list[dict]` with metadata
+
+2. **EmbeddingService** (`backend/app/services/embedding_service.py`)
+   - Calls `POST /v1/embeddings` on mock LLM server
+   - Handles API errors (retries via LlmClient's resilience layer)
+   - Returns embeddings as `list[list[float]]`
+   - Stores embeddings in `Chunk.embedding` column (JSON string format)
+   - Exports `embed_chunks(document_id, chunks) -> list[dict]` with embeddings
+
+3. **RetrievalService** (`backend/app/services/retrieval_service.py`)
+   - Retrieves relevant chunks using cosine similarity
+   - Implementation: `dot_product / (magnitude_a * magnitude_b)`
+   - Filters by: top_k (default 5), similarity_threshold (default 0.5), document_ids
+   - Formats chunks with citations: `[1] (Doc ID: X, similarity: 0.92) Chunk text...`
+   - Exports `retrieve_relevant_chunks(question_embedding, document_ids, top_k, threshold)` and `format_retrieved_chunks(chunks)`
+
+4. **Updated ChatService** (`backend/app/services/chat_service.py`)
+   - Injected EmbeddingService and RetrievalService in constructor
+   - Made `_build_context(document_ids, question) async`
+   - Steps: (1) Embed question, (2) Retrieve chunks, (3) Format with citations
+   - Falls back gracefully on errors (logs, returns placeholder context)
+   - Signature: `async def _build_context(...) -> str`
+
+### Design Decisions
+
+1. **Embedding Storage (JSON String, not pgvector type)**
+   - Simpler to handle in Python: `json.dumps(embedding)` → store → `json.loads()`
+   - Avoids pgvector native type complexity for now
+   - Production: refactor to use pgvector `<=>` operator in SQL
+
+2. **Sentence-Based Chunking (not token-based)**
+   - Simpler regex split: `(?<=[.!?])\s+`
+   - Preserves sentence boundaries (better semantic coherence)
+   - Limitation: doesn't handle abbreviations (Dr., Inc.) or decimals (3.14)
+   - Good enough for test/demo; production needs better NLP
+
+3. **Manual Cosine Similarity (not SQL pgvector operator)**
+   - Simpler to test and debug
+   - Works in-memory for small result sets
+   - Limitation: doesn't scale to millions of chunks
+   - Production: use `chunk_embedding <=> query_embedding` in SQL
+
+4. **Constructor Injection of Services**
+   - ChatService receives EmbeddingService and RetrievalService
+   - Allows testing with mocks; no module-level singletons
+   - Follows Rule 1 (layering) and Rule 2 (dependency injection) from CLAUDE.md
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `backend/app/services/chunking_service.py` | 229 lines (NEW), chunk splitting with overlap |
+| `backend/app/services/embedding_service.py` | 189 lines (NEW), embedding generation & storage |
+| `backend/app/services/retrieval_service.py` | 221 lines (NEW), similarity search & formatting |
+| `backend/app/services/chat_service.py` | 71 insertions, integrated RAG into `_build_context()` |
+| `backend/tests/test_chunking_service.py` | 235 lines (NEW), 15+ tests |
+| `backend/tests/test_embedding_service.py` | 241 lines (NEW), 10+ tests |
+| `backend/tests/test_retrieval_service.py` | 317 lines (NEW), 12+ tests |
+
+### Test Evidence
+
+**All 37 new RAG tests pass:**
+
+```
+✅ test_chunking_service.py (15 tests)
+   - Sentence splitting (basic, punctuation, whitespace)
+   - Token estimation
+   - Chunk grouping with overlap
+   - Integration: chunk_text() produces valid dicts
+   - Edge cases: empty text, no sentence endings, very long sentences
+
+✅ test_embedding_service.py (10 tests)
+   - API call success (mock response parsing)
+   - Embedding count validation
+   - Error handling (API 500, network timeout)
+   - Chunk embedding storage
+   - Database interaction
+
+✅ test_retrieval_service.py (12 tests)
+   - Cosine similarity calculation
+   - Chunk filtering by threshold
+   - Top-k retrieval
+   - Multi-document filtering
+   - Chunk formatting with citations
+   - Empty result handling
+
+Total: 94 tests pass (57 existing + 37 new)
+```
+
+### Integration Points
+
+1. **ChatService → EmbeddingService**
+   - `await embedding_service._get_embeddings([question])`
+   - Returns `list[list[float]]` (embeddings for each input)
+
+2. **ChatService → RetrievalService**
+   - `await retrieval_service.retrieve_relevant_chunks(question_embedding, document_ids, top_k=5, similarity_threshold=0.5)`
+   - Returns `list[dict]` with keys: `["id", "document_id", "text", "similarity"]`
+
+3. **Retrieval → Formatting**
+   - `await retrieval_service.format_retrieved_chunks(chunks)`
+   - Returns formatted context string with citations for LLM
+
+### How File Scope Was Limited
+
+- Only touched **4 backend files**:
+  - `backend/app/services/chat_service.py` (modified to integrate retrieval)
+  - `backend/app/services/chunking_service.py` (new)
+  - `backend/app/services/embedding_service.py` (new)
+  - `backend/app/services/retrieval_service.py` (new)
+- Did not modify routers, repositories, or ORM models
+- Did not change migration files (read-only, as per Rule 7)
+- Did not change test fixtures or test infrastructure
+
+### Unresolved/Next Steps
+
+1. **Document Upload Pipeline** (TODO: STEP 3.5)
+   - Need to automatically chunk + embed when document is uploaded
+   - Options: (a) sync in upload endpoint (risk timeout), (b) async job (preferred)
+   - Should create JobType "embed_chunks" and queue in background worker
+
+2. **End-to-End Testing** (TODO: STEP 4.1)
+   - Test full flow: upload → chunk → embed → ask → retrieve → stream
+   - Verify citations appear in streamed response
+   - Verify multi-user isolation (user A can't retrieve user B's chunks)
+
+3. **Production Optimizations** (TODO: STEP 4.2+)
+   - Switch to pgvector native `<=>` operator in SQL (performance)
+   - Use tiktoken for accurate token estimation (not `len // 4`)
+   - Handle abbreviations/decimals in sentence splitting (better NLP)
+   - Add fuzzy matching or BM25 reranking for better retrieval quality
+
+4. **Rate-Limited/Slow LLM** (Validate existing behavior)
+   - Embedding API may timeout or return 429/503
+   - Existing LlmClient resilience should handle; verify with integration tests
+   - ChatService._build_context() already has try/except fallback
+
+### Summary
+
+✅ **RAG pipeline complete (3 new services, ChatService integrated)**  
+✅ **All 37 RAG tests pass** (no regressions to 57 existing)  
+✅ **ChatService now retrieves context** before passing to LLM  
+✅ **Citations included** in formatted chunks  
+✅ **Ready for document upload integration** (STEP 3.5)
+
+
