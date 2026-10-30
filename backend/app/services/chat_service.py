@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.document_repository import DocumentRepository
 from app.services.llm_client import LlmClient
+from app.services.embedding_service import EmbeddingService
+from app.services.retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +16,27 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Service for chat operations with document ownership verification."""
 
-    def __init__(self, db: AsyncSession, llm_client: LlmClient | None = None):
+    def __init__(
+        self,
+        db: AsyncSession,
+        llm_client: LlmClient | None = None,
+        embedding_service: EmbeddingService | None = None,
+        retrieval_service: RetrievalService | None = None,
+    ):
         """
         Initialize chat service.
 
         Args:
             db: Async SQLAlchemy session
             llm_client: LLM client for streaming (default: new instance)
+            embedding_service: Service for embedding questions (default: new instance)
+            retrieval_service: Service for retrieving relevant chunks (default: new instance)
         """
         self.db = db
         self.doc_repository = DocumentRepository(db)
         self.llm_client = llm_client or LlmClient()
+        self.embedding_service = embedding_service or EmbeddingService(db)
+        self.retrieval_service = retrieval_service or RetrievalService(db)
 
     async def verify_document_ownership(
         self, document_ids: list[int], current_user_id: str
@@ -93,8 +105,8 @@ class ChatService:
             },
         )
 
-        # Build context from documents (simplified for now)
-        context = self._build_context(document_ids)
+        # Build context from documents using RAG pipeline
+        context = await self._build_context(document_ids, question)
 
         # Build messages for LLM
         messages = [
@@ -135,26 +147,57 @@ class ChatService:
             )
             yield error_event
 
-    def _build_context(self, document_ids: list[int]) -> str:
+    async def _build_context(self, document_ids: list[int], question: str) -> str:
         """
-        Build context string from documents.
+        Build context string from documents using RAG pipeline.
 
-        TODO: In production, use RAG pipeline (Step 3.3):
-        - Retrieve relevant chunks from pgvector
-        - Format in delimited blocks
-        - Include chunk metadata for citations
-
-        For now, return placeholder.
+        Steps:
+        1. Embed the user question
+        2. Retrieve relevant chunks from selected documents
+        3. Format chunks with citations
 
         Args:
-            document_ids: Document IDs
+            document_ids: Document IDs to search
+            question: User's question to embed and search with
 
         Returns:
-            Context string for LLM
+            Context string for LLM with citations
         """
         if not document_ids:
             return "(No documents selected)"
-        return f"(Documents: {', '.join(map(str, document_ids))})"
+
+        try:
+            # Step 1: Embed the question
+            question_embeddings = await self.embedding_service._get_embeddings([question])
+            if not question_embeddings:
+                logger.warning("Failed to embed question")
+                return f"(Documents: {', '.join(map(str, document_ids))})"
+
+            question_embedding = question_embeddings[0]
+
+            # Step 2: Retrieve relevant chunks
+            retrieved_chunks = await self.retrieval_service.retrieve_relevant_chunks(
+                question_embedding=question_embedding,
+                document_ids=document_ids,
+                top_k=5,
+                similarity_threshold=0.5,
+            )
+
+            # Step 3: Format chunks for context
+            if retrieved_chunks:
+                context = await self.retrieval_service.format_retrieved_chunks(
+                    retrieved_chunks
+                )
+                return context
+            else:
+                return f"(No relevant chunks found in {len(document_ids)} document(s))"
+
+        except Exception as e:
+            logger.error(
+                "Error building RAG context",
+                extra={"error": str(e), "doc_count": len(document_ids)},
+            )
+            return f"(Error retrieving context: {str(e)})"
 
     def _escape_json(self, text: str) -> str:
         """Escape text for JSON string (for SSE data field)."""
