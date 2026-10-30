@@ -2,16 +2,18 @@
 
 from pydantic import BaseModel, Field
 from typing import Optional
+from datetime import datetime
 
 
 class DocumentResponse(BaseModel):
     """Document response schema."""
 
     id: int
-    title: str
-    content: Optional[str] = None
+    filename: str
     owner_id: str
-    created_at: Optional[str] = None
+    content: Optional[str] = None
+    metadata: Optional[str] = None
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -20,14 +22,14 @@ class DocumentResponse(BaseModel):
 class DocumentListResponse(BaseModel):
     """List of documents response."""
 
-    documents: list[DocumentResponse]
+    items: list[DocumentResponse]
     total: int = 0
 
 
 class DocumentUploadRequest(BaseModel):
     """Upload document request."""
 
-    title: str = Field(..., min_length=1, max_length=255)
+    filename: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1)
 
 
@@ -36,4 +38,4 @@ class DocumentSummaryResponse(BaseModel):
 
     doc_id: int
     summary: str
-    style: Optional[str] = None
+

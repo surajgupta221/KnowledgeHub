@@ -1,6 +1,7 @@
 """Tests for document_router - schema and structure validation."""
 
 import pytest
+from datetime import datetime
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -37,28 +38,28 @@ def test_document_response_schema():
     """Verify DocumentResponse schema works correctly."""
     data = {
         "id": 1,
-        "title": "Test Doc",
+        "filename": "policy.pdf",
         "content": "Test content",
         "owner_id": "user_a",
-        "created_at": "2024-01-01T00:00:00"
+        "created_at": datetime.now()
     }
     
     doc = DocumentResponse(**data)
     assert doc.id == 1
-    assert doc.title == "Test Doc"
+    assert doc.filename == "policy.pdf"
     assert doc.owner_id == "user_a"
 
 
 def test_document_list_response_schema():
     """Verify DocumentListResponse schema works correctly."""
     data = {
-        "documents": [
+        "items": [
             {
                 "id": 1,
-                "title": "Doc 1",
+                "filename": "policy.pdf",
                 "content": "Content 1",
                 "owner_id": "user_a",
-                "created_at": "2024-01-01T00:00:00"
+                "created_at": datetime.now()
             }
         ],
         "total": 1
@@ -66,8 +67,8 @@ def test_document_list_response_schema():
     
     resp = DocumentListResponse(**data)
     assert resp.total == 1
-    assert len(resp.documents) == 1
-    assert resp.documents[0].title == "Doc 1"
+    assert len(resp.items) == 1
+    assert resp.items[0].filename == "policy.pdf"
 
 
 def test_document_upload_request_validation():
@@ -75,16 +76,16 @@ def test_document_upload_request_validation():
     from app.schemas.document_schemas import DocumentUploadRequest
     
     # Valid request
-    req = DocumentUploadRequest(title="Test", content="Content")
-    assert req.title == "Test"
+    req = DocumentUploadRequest(filename="policy.pdf", content="Content")
+    assert req.filename == "policy.pdf"
     
-    # Invalid: empty title
+    # Invalid: empty filename
     with pytest.raises(Exception):  # Pydantic validation error
-        DocumentUploadRequest(title="", content="Content")
+        DocumentUploadRequest(filename="", content="Content")
     
     # Invalid: empty content
     with pytest.raises(Exception):  # Pydantic validation error
-        DocumentUploadRequest(title="Test", content="")
+        DocumentUploadRequest(filename="policy.pdf", content="")
 
 
 def test_document_summary_response_schema():
@@ -93,11 +94,10 @@ def test_document_summary_response_schema():
     
     resp = DocumentSummaryResponse(
         doc_id=1,
-        summary="This is a summary",
-        style="executive"
+        summary="This is a summary"
     )
     assert resp.doc_id == 1
-    assert resp.style == "executive"
+    assert resp.summary == "This is a summary"
 
 
 def test_app_startup():
@@ -105,3 +105,4 @@ def test_app_startup():
     app = create_app()
     assert app is not None
     assert app.title == "KnowledgeHub"
+
