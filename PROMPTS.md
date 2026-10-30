@@ -1255,4 +1255,166 @@ Total: 94 tests pass (57 existing + 37 new)
 ✅ **Citations included** in formatted chunks  
 ✅ **Ready for document upload integration** (STEP 3.5)
 
+---
+
+## STEP 3.5: Document Upload Pipeline (Automatic Chunking & Embedding)
+
+### Objective
+When a document is uploaded, automatically queue a background job to:
+1. Chunk the document (via ChunkingService)
+2. Generate embeddings for chunks (via EmbeddingService)
+3. Store chunks with embeddings in the database
+
+### Implementation
+
+**Services Updated:**
+
+1. **JobService** (`backend/app/services/job_service.py`)
+   - Added `create_embed_chunks_job(document_id, user_id) -> Job`
+   - Creates a pending job with type 'embed_chunks'
+
+2. **DocumentRouter** (`backend/app/routers/document_router.py`)
+   - Modified `/api/documents/upload` endpoint
+   - After document is stored, creates an embedding job
+   - Enqueues job to background worker
+   - Returns upload response immediately (non-blocking)
+   - Logs job queueing errors but doesn't fail upload
+
+3. **JobWorker** (`backend/app/workers/job_worker.py`)
+   - Added handler for 'embed_chunks' job type in `_process_job()`
+   - Implements `_embed_document_chunks()` workflow:
+     - Calls ChunkingService to split document
+     - Calls EmbeddingService to generate embeddings
+     - Calls ChunkRepository to store chunks
+   - Handles errors gracefully (retry logic via JobService)
+
+**New Repository:**
+
+4. **ChunkRepository** (`backend/app/repositories/chunk_repository.py`)
+   - Encapsulates Chunk model DB access
+   - Methods:
+     - `create_chunk()` — Store chunk with embedding
+     - `get_chunk()` — Retrieve by ID
+     - `get_chunks_for_document()` — Retrieve all for document
+     - `delete_chunks_for_document()` — Delete all (for re-chunking)
+
+### Workflow
+
+```
+User uploads document
+  ↓
+DocumentRouter.upload_document()
+  ├─ DocumentService.create_document()  [store in DB]
+  ├─ JobService.create_embed_chunks_job()  [create pending job]
+  └─ worker.enqueue_job()  [queue for processing]
+  ↓ [returns immediately to user]
+BackgroundWorker processes job
+  ├─ ChunkingService.chunk_text()  [split into chunks]
+  ├─ EmbeddingService.embed_chunks()  [generate embeddings]
+  └─ ChunkRepository.create_chunk() × N  [store chunks with embeddings]
+  ↓
+Job marked as completed with chunk count
+```
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `backend/app/repositories/chunk_repository.py` | 73 lines (NEW), CRUD for chunks |
+| `backend/app/services/job_service.py` | 14 insertions, added `create_embed_chunks_job()` |
+| `backend/app/routers/document_router.py` | 42 insertions, queue job after upload |
+| `backend/app/workers/job_worker.py` | 64 insertions, embedding job handler + workflow |
+| `backend/tests/test_job_worker.py` | 240 lines (NEW), 9 tests for job pipeline |
+
+### Test Evidence
+
+**9 new tests pass** (103 total: 94 existing + 9 new):
+
+```
+✅ test_create_embed_chunks_job() — Job creation
+✅ test_embed_chunks_job_processing() — Job retrieval and status
+✅ test_embed_chunks_stores_metadata() — Chunk storage with metadata
+✅ test_embed_chunks_job_with_empty_document() — Empty document handling
+✅ test_embed_chunks_job_retry_on_failure() — Retry mechanism
+✅ test_embed_chunks_job_max_retries_exceeded() — Max retries enforcement
+✅ test_chunk_repository_create_chunk() — Chunk creation
+✅ test_chunk_repository_get_chunks_for_document() — Chunk retrieval
+✅ test_chunk_repository_delete_chunks() — Chunk deletion
+```
+
+### Key Design Decisions
+
+1. **Non-blocking Upload**
+   - Upload endpoint returns immediately after storing document
+   - Job is queued asynchronously in background
+   - User doesn't wait for chunking/embedding
+   - If job queueing fails, upload still succeeds (logged as warning)
+
+2. **Retry & Error Handling**
+   - Failed embedding jobs can be retried (default 3 retries)
+   - JobService tracks retry count and status
+   - Permanent failure after max retries exceeded
+   - Error messages logged but not exposed to user
+
+3. **Per-Document Job Queue**
+   - Each document gets its own embedding job
+   - If user re-uploads same document, new job is created
+   - Old chunks can be deleted via `ChunkRepository.delete_chunks_for_document()`
+
+4. **Repository Pattern**
+   - ChunkRepository encapsulates Chunk DB access
+   - JobWorker uses ChunkRepository to store chunks
+   - Enables testing without full database
+
+### Multi-Tenant Isolation
+
+- Job stores `user_id` for audit trail
+- Chunks linked to Document (which has `owner_id`)
+- No explicit user_id check in job processing (inherited via Document ownership)
+- Chat service verifies document ownership before retrieval (double-checks in STEP 4)
+
+### How File Scope Was Limited
+
+- Only touched **5 backend files**:
+  - `backend/app/repositories/chunk_repository.py` (new)
+  - `backend/app/services/job_service.py` (added 1 method)
+  - `backend/app/routers/document_router.py` (modified upload endpoint)
+  - `backend/app/workers/job_worker.py` (added job handler)
+  - `backend/tests/test_job_worker.py` (new test file)
+- Did not modify models, schemas, or migration files
+- Did not change other routers or services
+
+### Unresolved/Next Steps
+
+1. **End-to-End Integration Test** (TODO: STEP 4.1)
+   - Test full flow with Docker: upload → chunk → embed → ask → retrieve
+   - Verify chunks appear in database after job completes
+   - Verify retrieved chunks match query
+
+2. **Job Status Endpoint** (TODO: STEP 4.2)
+   - Add GET /api/jobs/{job_id} endpoint to check embedding progress
+   - Allow user to poll job status while chunking is in progress
+   - Return chunk count and ETA
+
+3. **Rate Limiting & Concurrency** (TODO: STEP 4.3)
+   - Limit concurrent embedding jobs (settings.job_max_concurrent_llm_calls)
+   - Prevent overwhelming mock LLM server
+   - Queue jobs fairly across users
+
+4. **Production Optimization** (TODO: STEP 4.4)
+   - Use Celery/RQ for job queueing (vs in-memory asyncio.Queue)
+   - Persist jobs to database (vs memory-only)
+   - Add monitoring: job metrics, error tracking
+
+### Summary
+
+✅ **Document upload pipeline complete**  
+✅ **Automatic chunking and embedding on upload**  
+✅ **Non-blocking design (upload returns immediately)**  
+✅ **Background job processing with retry logic**  
+✅ **All 103 tests pass** (no regressions)  
+✅ **Chunks stored in database with embeddings**  
+✅ **Ready for end-to-end testing** (STEP 4.1)
+
+
 
