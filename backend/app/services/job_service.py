@@ -28,6 +28,20 @@ class JobService:
         await self.session.flush()  # Get ID without commit
         return job
 
+    async def create_embed_chunks_job(self, document_id: int, user_id: str) -> Job:
+        """Create a background job to chunk and embed a document."""
+        job = Job(
+            document_id=document_id,
+            user_id=user_id,
+            job_type='embed_chunks',
+            status='pending',
+            retry_count=0,
+            max_retries=3,
+        )
+        self.session.add(job)
+        await self.session.flush()  # Get ID without commit
+        return job
+
     async def get_job(self, job_id: int) -> Job | None:
         """Retrieve job by ID."""
         result = await self.session.execute(

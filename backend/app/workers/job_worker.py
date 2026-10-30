@@ -1,6 +1,7 @@
 """Background job worker for processing queued tasks."""
 
 import asyncio
+import json
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +9,9 @@ from app.config import settings
 from app.database import get_session
 from app.services.job_service import JobService
 from app.services.llm_client import LlmClient
+from app.services.chunking_service import ChunkingService
+from app.services.embedding_service import EmbeddingService
+from app.repositories.chunk_repository import ChunkRepository
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,7 @@ class JobWorker:
     def __init__(self):
         self.queue: asyncio.Queue = asyncio.Queue()
         self.running = False
-        self.llm_client = LlmClient(settings.llm_base_url, settings.llm_api_key)
+        self.llm_client = LlmClient(settings.mock_llm_url, settings.llm_api_key)
 
     async def enqueue_job(self, job_id: int) -> None:
         """Add job to processing queue."""
@@ -77,6 +81,12 @@ class JobWorker:
                 if job.job_type == 'summary':
                     summary = await self._generate_summary(document.content)
                     await job_service.complete_job(job_id, summary)
+                elif job.job_type == 'embed_chunks':
+                    chunk_count = await self._embed_document_chunks(
+                        session, document.id, document.content
+                    )
+                    result = json.dumps({"chunks_created": chunk_count})
+                    await job_service.complete_job(job_id, result)
                 else:
                     raise ValueError(f"Unknown job type: {job.job_type}")
 
@@ -101,6 +111,58 @@ class JobWorker:
             summary_tokens.append(token)
 
         return ''.join(summary_tokens)
+
+    async def _embed_document_chunks(
+        self, session: AsyncSession, document_id: int, content: str
+    ) -> int:
+        """
+        Chunk document and generate embeddings.
+
+        Steps:
+        1. Split document into chunks using ChunkingService
+        2. Generate embeddings using EmbeddingService
+        3. Store chunks with embeddings in DB
+
+        Args:
+            session: DB session
+            document_id: Document ID
+            content: Document content
+
+        Returns:
+            Number of chunks created
+        """
+        from app.repositories.chunk_repository import ChunkRepository
+
+        # Step 1: Split into chunks
+        chunking_service = ChunkingService()
+        chunks = chunking_service.chunk_text(content, document_id)
+
+        if not chunks:
+            logger.warning(f"No chunks created for document {document_id}")
+            return 0
+
+        # Step 2: Generate embeddings
+        embedding_service = EmbeddingService(session)
+        chunks_with_embeddings = await embedding_service.embed_chunks(
+            document_id, chunks
+        )
+
+        # Step 3: Store chunks in DB
+        chunk_repo = ChunkRepository(session)
+        for chunk_data in chunks_with_embeddings:
+            await chunk_repo.create_chunk(
+                document_id=chunk_data["document_id"],
+                sequence=chunk_data["sequence"],
+                text=chunk_data["text"],
+                tokens=chunk_data.get("token_estimate"),
+                embedding=chunk_data.get("embedding"),
+            )
+
+        await session.commit()
+        logger.info(
+            f"Embedded document {document_id}: {len(chunks_with_embeddings)} chunks"
+        )
+        return len(chunks_with_embeddings)
 
     async def stop(self) -> None:
         """Stop worker gracefully."""

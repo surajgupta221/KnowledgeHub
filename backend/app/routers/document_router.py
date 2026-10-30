@@ -14,6 +14,8 @@ from app.schemas.document_schemas import (
     DocumentSummaryResponse,
 )
 from app.services.document_service import DocumentService
+from app.services.job_service import JobService
+from app.workers.job_worker import get_worker
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +29,12 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
 ) -> DocumentResponse:
     """
-    Upload a new document.
+    Upload a new document and queue embedding job.
 
     - User ID extracted from auth context (JWT/session)
     - Input validated by Pydantic schema
     - Returns response schema (never ORM model)
+    - Queues background job to chunk and embed document
     - Logs operation with user_id and doc_id (no content)
     """
     try:
@@ -41,10 +44,39 @@ async def upload_document(
             content=request.content,
             owner_id=current_user_id,
         )
-        logger.info(
-            "Document uploaded",
-            extra={"user_id": current_user_id, "doc_id": doc.id, "title": doc.title},
-        )
+
+        # Queue embedding job (chunk + embed in background)
+        try:
+            job_service = JobService(db)
+            job = await job_service.create_embed_chunks_job(
+                document_id=doc.id,
+                user_id=current_user_id,
+            )
+            await job_service.commit()
+
+            # Enqueue job for background processing
+            worker = get_worker()
+            await worker.enqueue_job(job.id)
+
+            logger.info(
+                "Document uploaded and embedding job queued",
+                extra={
+                    "user_id": current_user_id,
+                    "doc_id": doc.id,
+                    "job_id": job.id,
+                },
+            )
+        except Exception as e:
+            # Log job queueing error but don't fail upload
+            logger.error(
+                "Failed to queue embedding job",
+                extra={
+                    "user_id": current_user_id,
+                    "doc_id": doc.id,
+                    "error": str(e),
+                },
+            )
+
         return DocumentResponse.from_orm(doc)
     except Exception as e:
         logger.error(
