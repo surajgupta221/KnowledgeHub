@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: knowledge_user
+      POSTGRES_PASSWORD: knowledge_pass
+      POSTGRES_DB: knowledge_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mock_llm:
+    image: python:3.11-slim
+    working_dir: /app
+    command: python -m pytest --co -q 2>/dev/null || python mock_llm_server.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://knowledge_user:knowledge_pass@postgres:5432/knowledge_hub
+      MOCK_LLM_URL: http://mock_llm:8001
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_BASE: http://localhost:8000/api
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
