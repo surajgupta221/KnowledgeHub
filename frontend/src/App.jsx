@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import DocumentList from './components/DocumentList';
 import ChatPanel from './components/ChatPanel';
+import DocumentUpload from './components/DocumentUpload';
 import './App.css';
 
 export default function App() {
   const [selectedDocuments, setSelectedDocuments] = useState([]);
+  const documentListRef = useRef(null);
 
   const handleSelectDocument = (doc) => {
     setSelectedDocuments((prev) => {
@@ -16,6 +18,13 @@ export default function App() {
     });
   };
 
+  const handleUploadSuccess = () => {
+    // Refresh document list after successful upload
+    if (documentListRef.current) {
+      documentListRef.current.refresh?.();
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -25,7 +34,12 @@ export default function App() {
 
       <div className="app-container">
         <aside className="sidebar">
-          <DocumentList onSelectDocument={handleSelectDocument} />
+          <DocumentUpload onUploadSuccess={handleUploadSuccess} />
+
+          <DocumentList
+            ref={documentListRef}
+            onSelectDocument={handleSelectDocument}
+          />
 
           {selectedDocuments.length > 0 && (
             <div className="selected-documents">

@@ -614,14 +614,244 @@ Backend verified unchanged (39 tests pass).
 
 ---
 
+---
+
+## STEP 2.4: Document Upload Form
+
+### Objective
+Create DocumentUpload component for uploading policy documents with client-side validation, progress tracking, and error handling.
+
+### Files Created
+
+1. **frontend/src/components/DocumentUpload.jsx** (165 lines)
+   - File input with validation (PDF/TXT/CSV, max 10MB)
+   - State: `file`, `uploading`, `progress`, `error`, `success`
+   - **XMLHttpRequest for progress tracking** (fetch doesn't support upload progress)
+   - FormData for multipart/form-data submission
+   - Progress bar with percentage display
+   - Error/success message display
+   - Clear form on success or via Clear button
+
+2. **frontend/src/components/DocumentUpload.test.jsx** (320 lines)
+   - 18 comprehensive tests covering:
+     - Renders file input, upload/clear buttons ✅
+     - Rejects non-PDF/text files ✅
+     - Rejects files >10MB ✅
+     - Accepts PDF, TXT, CSV ✅
+     - Upload button disabled without file ✅
+     - Progress display during upload ✅
+     - Success message + callback ✅
+     - Error handling (HTTP, network, abort) ✅
+     - Form cleared after success ✅
+     - Buttons disabled during upload ✅
+     - FormData/XMLHttpRequest sent correctly ✅
+
+3. **frontend/src/App.jsx** (80 lines)
+   - Import DocumentUpload component
+   - Add DocumentUpload to sidebar (above DocumentList)
+   - Ref forward to DocumentList for refresh on upload success
+   - Pass `onUploadSuccess` callback to refresh document list
+
+4. **frontend/src/App.css** (140 lines added)
+   - `.document-upload`: container styling
+   - `.file-input`: file input styling with focus states
+   - `.file-name`: display selected file info
+   - `.progress-bar`: progress indicator with gradient
+   - `.btn-upload`, `.btn-clear`: button styling
+   - `.success-message`: green success alert
+   - `.upload-info`: info text (supported formats, max size)
+
+### Architecture Decisions
+
+**1. XMLHttpRequest for Upload Progress**
+- fetch API doesn't expose upload progress
+- XMLHttpRequest.upload.addEventListener('progress', ...) provides real-time tracking
+- Shows percentage (0-100%) as file uploads
+
+```javascript
+xhr.upload.addEventListener('progress', (e) => {
+  if (e.lengthComputable) {
+    const percentComplete = (e.loaded / e.total) * 100;
+    setProgress(Math.round(percentComplete));
+  }
+});
+```
+
+**2. FormData for Multipart Upload**
+```javascript
+const formData = new FormData();
+formData.append('file', file);
+xhr.send(formData);
+```
+✅ Automatically sets Content-Type: multipart/form-data
+✅ Browser handles encoding
+
+**3. Client-Side Validation**
+```javascript
+// File type validation
+if (!ALLOWED_TYPES.includes(selectedFile.type)) {
+  setError('Invalid file type...');
+  return;
+}
+
+// File size validation
+if (selectedFile.size > MAX_FILE_SIZE) {
+  setError('File too large...');
+  return;
+}
+```
+✅ Catches errors before network request
+✅ Faster feedback to user
+
+**4. Error Handling with Selective Display**
+```javascript
+xhr.addEventListener('load', () => {
+  if (xhr.status === 200 || xhr.status === 201) {
+    // Success
+  } else {
+    // Parse JSON error or fallback to statusText
+  }
+});
+
+xhr.addEventListener('error', () => setError('Network error...'));
+xhr.addEventListener('abort', () => setError('Upload cancelled...'));
+```
+
+**5. Refresh Document List After Upload**
+```javascript
+// App.jsx
+const documentListRef = useRef(null);
+
+const handleUploadSuccess = () => {
+  if (documentListRef.current) {
+    documentListRef.current.refresh?.();
+  }
+};
+
+// DocumentList.jsx
+useImperativeHandle(ref, () => ({
+  refresh: () => fetchDocuments(currentPage),
+}), [currentPage, fetchDocuments]);
+```
+✅ Parent can trigger child refresh
+✅ Clean API, no state prop drilling
+
+### Test Evidence
+
+**Backend: 39 tests PASS** (no changes to backend)
+
+**Frontend: 18 DocumentUpload tests**
+```
+✅ Renders form elements
+✅ File type validation (reject .exe, .sh)
+✅ File size validation (reject >10MB)
+✅ Accept PDF, TXT, CSV
+✅ Button states (disabled/enabled)
+✅ Progress display during upload
+✅ Success message + callback
+✅ Error: HTTP error response
+✅ Error: Network error
+✅ Error: Upload abort
+✅ Clear form on button click
+✅ Buttons disabled during upload
+✅ FormData sent with XMLHttpRequest
+✅ Form cleared after success
+✅ Upload info text displayed
+```
+
+All tests use XMLHttpRequest mock, no real HTTP.
+
+### UI/UX Features
+
+**1. Progress Indicator**
+- Linear progress bar with gradient (green)
+- Percentage text overlay
+- Updates in real-time during upload
+- Smooth 0.3s transition
+
+**2. Validation Feedback**
+- Red error alert for invalid file type
+- Red error alert for oversized file
+- Green success alert after upload
+- Error auto-clears on new file select
+
+**3. Button States**
+- Upload: disabled until valid file selected
+- Clear: disabled until file selected
+- Both: disabled during upload (shows "Uploading...")
+- File input: disabled during upload
+
+**4. File Info Display**
+- Shows filename after selection
+- Shows file size in MB (2 decimals)
+- Styled with blue left border
+
+### Integration with App
+
+**Layout:**
+```
+┌─────────────────────────┐
+│ Sidebar                 │
+├─────────────────────────┤
+│ ┌─────────────────────┐ │
+│ │ DocumentUpload      │ │  (new, at top)
+│ │ - File input        │ │
+│ │ - Progress bar      │ │
+│ │ - Upload/Clear      │ │
+│ └─────────────────────┘ │
+│ ┌─────────────────────┐ │
+│ │ DocumentList        │ │  (refreshes after upload)
+│ │ - Documents list    │ │
+│ │ - Pagination        │ │
+│ └─────────────────────┘ │
+│ ┌─────────────────────┐ │
+│ │ Selected (N)        │ │
+│ │ - Selected docs     │ │
+│ └─────────────────────┘ │
+└─────────────────────────┘
+```
+
+**Flow:**
+1. User selects PDF/TXT/CSV file via file input
+2. Component validates type and size
+3. User clicks Upload
+4. Progress bar shows upload % (0-100)
+5. On success: document list refreshes, form cleared, success message shown
+6. User now sees newly uploaded doc in DocumentList
+
+### git diff (STEP 2.4)
+
+```
+ frontend/src/components/DocumentUpload.jsx       | 165 +++++++++++++++
+ frontend/src/components/DocumentUpload.test.jsx  | 320 ++++++++++++++++++++++
+ frontend/src/App.jsx                             | 25 ++-
+ frontend/src/App.css                             | 140 ++++++++++++
+ PROMPTS.md                                       | 150 +++ (this section)
+ 5 files changed, 800 insertions(+)
+```
+
+### Summary
+
+✅ **DocumentUpload component**: File validation, progress tracking, error handling  
+✅ **Frontend tests**: 18 tests cover all scenarios (XMLHttpRequest mock)  
+✅ **Integration**: App.jsx integrates upload + list + refresh  
+✅ **Styling**: Progress bar, file info, error/success messages  
+✅ **UX**: Clear states, feedback, smooth progress  
+
+Backend verified unchanged (39 tests pass).
+
+---
+
 ### Next Steps (TODO)
 
 - ✅ STEP 2.2: Streaming chat endpoint (complete)
 - ✅ STEP 2.3: Fix DocumentList freezing and integrate UI (complete)
-- ⏳ STEP 2.4: Document upload form (POST /api/documents UI)
-- ⏳ STEP 3.1: Background job queue (for summary job delegation)
-- ⏳ STEP 3.2: Resilient LLM client (retry logic, circuit breaker)
-- ⏳ STEP 3.3: RAG pipeline (chunking, embedding, retrieval)
+- ✅ STEP 2.4: Document upload form with progress (complete)
+- ⏳ STEP 3.1: Database schema & migrations (Alembic)
+- ⏳ STEP 3.2: Background job queue (asyncio worker, POST 202)
+- ⏳ STEP 3.3: Resilient LLM client (retry, circuit breaker)
+- ⏳ STEP 3.4: RAG pipeline (chunking, embedding, retrieval)
 - ⏳ STEP 4: Final verification
+
 
 

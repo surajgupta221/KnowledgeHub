@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 
-export default function DocumentList({ onSelectDocument }) {
+const DocumentList = forwardRef(({ onSelectDocument }, ref) => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -57,6 +57,11 @@ export default function DocumentList({ onSelectDocument }) {
       }
     };
   }, []);
+
+  // Expose refresh method via ref
+  useImperativeHandle(ref, () => ({
+    refresh: () => fetchDocuments(currentPage),
+  }), [currentPage, fetchDocuments]);
 
   const handlePreviousPage = () => {
     if (currentPage > 0) {
@@ -161,4 +166,8 @@ export default function DocumentList({ onSelectDocument }) {
       )}
     </div>
   );
-}
+});
+
+DocumentList.displayName = 'DocumentList';
+
+export default DocumentList;
