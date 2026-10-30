@@ -963,3 +963,133 @@ Backend test coverage:
 - Explicit timeout configuration (prevent hanging requests)
 - Tests: simulate 429/503 errors with respx, verify retries happen
 
+
+---
+
+## STEP 3.3: Resilient LLM Client (Retry, Backoff, Circuit Breaker)
+
+### Objective
+Implement resilient request handling in LlmClient to gracefully handle transient failures (429, 503) from the mock LLM server without freezing the app or losing requests.
+
+### Architecture & Implementation
+
+**Core Patterns:**
+1. **Exponential Backoff with Jitter**
+   - Base delay: 1s, doubled per retry: 1s → 2s → 4s → 8s (capped)
+   - Add ±10% random jitter to avoid thundering herd
+   - Formula: `delay = min(BASE * 2^attempt, MAX) + random(±jitter%)`
+
+2. **Retry Logic**
+   - Retryable codes: 429 (Too Many Requests), 503 (Service Unavailable)
+   - Non-retryable codes (400, 401, 403, 404, 500, etc.): fail immediately
+   - Max retries: 3 (configurable)
+   - Retry-After header: if present, use as delay override
+
+3. **Circuit Breaker Pattern**
+   - States: CLOSED (normal) → OPEN (failing) → HALF_OPEN (testing recovery) → CLOSED
+   - Failure threshold: 5 consecutive failures opens circuit
+   - Open timeout: 30s (configurable), then transition to half-open
+   - Half-open: allow single test request; if succeeds, close circuit; if fails, reopen
+
+4. **Timeout Handling**
+   - Request-level timeout: 30s per attempt (not cumulative across retries)
+   - httpx.TimeoutException on timeout: retry logic applies
+   - Overall request flow can exceed 30s if multiple retries needed
+
+**Code Structure:**
+- `LlmClient.__init__()`: Accept timeout and circuit breaker config
+- `_should_retry(status_code)`: Check if code is retryable (429, 503)
+- `_get_retry_delay(attempt, retry_after)`: Calculate backoff delay
+- `_check_circuit_breaker()`: Check state, auto-transition to half-open if timeout passed
+- `_record_success()`: Reset circuit to CLOSED if in HALF_OPEN
+- `_record_failure()`: Increment counter, open circuit if threshold reached
+- `stream_completion()`: Main method, wraps all requests in retry loop
+
+### Test Coverage
+
+11 new tests in `backend/tests/test_llm_resilience.py`:
+
+**Retry Tests:**
+- ✅ `test_max_retries_exceeded`: Verify all retries exhausted → exception
+- ✅ `test_respects_retry_after_header`: Verify Retry-After header respected
+- ✅ `test_no_retry_on_4xx_errors`: Non-retryable → immediate fail
+- ✅ `test_non_retryable_error_fails_fast`: 401 fails without retry wait
+
+**Circuit Breaker Tests:**
+- ✅ `test_circuit_breaker_state_tracking`: Failure count → state transition
+- ✅ `test_circuit_breaker_resets_after_timeout`: OPEN → HALF_OPEN after timeout
+- ✅ `test_circuit_breaker_closes_on_success`: HALF_OPEN + success → CLOSED
+
+**Backoff Tests:**
+- ✅ `test_exponential_backoff_calculation`: Delays increase exponentially
+- ✅ `test_retry_after_header_override`: Retry-After overrides calculated delay
+
+**Integration Tests:**
+- ✅ `test_stream_success_with_proper_sse`: Success case, proper token streaming
+- ✅ `test_retryable_error_then_success`: 503 then 200 → eventual success
+
+### Verification
+
+```bash
+$ python -m pytest tests/test_llm_resilience.py -v
+11 passed
+
+$ python -m pytest -q
+57 passed, 51 warnings
+```
+
+All 57 tests pass:
+- ✅ 46 original tests (unchanged, no regression)
+- ✅ 11 new resilience tests
+
+### Key Design Decisions
+
+1. **Circuit Breaker per LlmClient instance**
+   - Each client instance maintains its own circuit state
+   - Global singleton not needed (clients created per request or session)
+   - Testing simplified: each test gets fresh instance with CLOSED state
+
+2. **Request timeout is per-attempt, not cumulative**
+   - Prevents hanging on slow servers
+   - Retry wait times don't count toward timeout
+   - User can wait longer overall if retries succeed
+
+3. **Retry-After header overrides exponential backoff**
+   - If LLM provides Retry-After, respect it exactly
+   - Allows server to signal optimal retry timing
+   - Falls back to exponential backoff if header absent
+
+4. **Circuit breaker opens at 5 failures, not 1**
+   - Single failure shouldn't trip circuit (transient)
+   - 5 failures indicates systematic problem (circuit open)
+   - Helps distinguish bugs from rate-limiting
+
+5. **No circuit breaker in pybreaker library used**
+   - Custom implementation simpler for this use case
+   - pybreaker (in pyproject.toml) available for future use
+   - Could replace if needed for advanced features (half-open state, custom logic)
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `backend/app/services/llm_client.py` | 237 insertions, refactored retry/circuit breaker logic |
+| `backend/tests/test_llm_resilience.py` | 265 lines (NEW), comprehensive resilience tests |
+
+### Summary
+
+✅ **Resilient LLM client complete**  
+✅ **Handles transient errors gracefully** (429, 503 → retry with backoff)  
+✅ **Circuit breaker prevents cascading failures**  
+✅ **App never freezes** (timeouts + retry loop bounds)  
+✅ **57 tests pass** (no regressions)  
+✅ **Ready for next step** (STEP 3.4: RAG Pipeline)
+
+### Next Steps (STEP 3.4: RAG Pipeline)
+
+- Document chunking service (split text into semantic chunks with overlap)
+- Embedding service (call /v1/embeddings, store in chunks table)
+- Retrieval service (cosine similarity search via pgvector)
+- Citation validation (ensure retrieved chunks are from selected documents)
+- Integrate with chat service (retrieve context before sending to LLM)
+
