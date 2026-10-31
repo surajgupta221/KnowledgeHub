@@ -85,12 +85,15 @@ class LlmClient:
             except (ValueError, TypeError):
                 pass
 
-        # Exponential backoff: 1s, 2s, 4s, 8s
-        delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
+        # Exponential backoff: 1s, 2s, 4s, 8s, capped at MAX_DELAY
+        delay = self.BASE_DELAY * (2 ** attempt)
 
-        # Add jitter: ±10%
+        # Add jitter: ±10% before capping
         jitter = delay * self.JITTER_FACTOR
         delay = delay + random.uniform(-jitter, jitter)
+
+        # Cap after jitter to ensure we don't exceed MAX_DELAY
+        delay = min(delay, self.MAX_DELAY)
 
         return max(delay, 0)
 
