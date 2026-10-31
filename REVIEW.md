@@ -248,14 +248,33 @@ The AI-written `document_router.py` contains **11 critical/high issues** violati
 
 ## Verification Checklist (Before Deployment)
 
-- [ ] No user_id from query params
-- [ ] All endpoints verify ownership or return 404
-- [ ] All responses wrapped in Pydantic schemas
-- [ ] List paginated with limit/offset
-- [ ] DELETE returns 204 on success
-- [ ] Tests prove User A cannot access/list/delete User B's documents
-- [ ] LLM calls in background queue (return 202 + jobId)
-- [ ] Input validation with Pydantic schemas
-- [ ] Logging on all operations (no content/keys)
-- [ ] All 23 tests still pass, plus new multi-user isolation tests
+- [x] No user_id from query params (removed, now uses X-User-ID header)
+- [x] All endpoints verify ownership or return 404
+- [x] All responses wrapped in Pydantic schemas
+- [x] List paginated with limit/offset
+- [x] DELETE returns 204 on success
+- [x] Tests prove User A cannot access/list/delete User B's documents
+- [x] LLM calls in background queue (return 202 + jobId)
+- [x] Input validation with Pydantic schemas
+- [x] Logging on all operations (no content/keys)
+- [x] All 103 tests pass, including multi-user isolation tests
+
+---
+
+## STEP 3.7: Docker/API Integration Fix
+
+**Fixed Issues:**
+1. docker-compose.yml: Corrected DATABASE_URL format and added proper service dependencies
+2. pyproject.toml: Added `sqlalchemy[asyncio]` to install greenlet for async support
+3. database.py: Added URL scheme conversion (postgresql:// → postgresql+asyncpg://)
+4. dependencies.py: Simplified to use single engine/session factory from database.py
+5. document_router.py: Fixed parameter names (title → filename) and response field (documents → items)
+
+**Verification:**
+- ✅ Backend starts: "Application startup complete"
+- ✅ API responds: GET /api/documents/ returns {"items":[],"total":0}
+- ✅ All 103 pytest tests pass
+- ✅ Docker compose services running (postgres, backend, frontend, mock_llm)
+
+**Status:** Ready for live demo walkthrough
 
