@@ -2,6 +2,7 @@
 
 from typing import AsyncGenerator
 
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.config import settings
@@ -44,12 +45,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_current_user() -> str:
+async def get_current_user(request: Request) -> str:
     """
     Dependency: Get the current user ID from auth context.
 
-    TODO: Implement actual JWT/session extraction.
-    For now, returns a mock user ID for testing.
+    Reads from X-User-ID header (set by frontend in login).
 
     In production, this should:
     1. Extract JWT from Authorization header or session cookie
@@ -61,6 +61,8 @@ async def get_current_user() -> str:
         async def my_endpoint(current_user_id: str = Depends(get_current_user)):
             ...
     """
-    # TODO (Step 2.1): Implement real auth
-    # Stub for testing:
-    return "user_a"
+    user_id = request.headers.get("X-User-ID")
+    if not user_id:
+        # Fallback for testing
+        user_id = "user_a"
+    return user_id

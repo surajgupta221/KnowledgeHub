@@ -30,14 +30,14 @@ describe('DocumentUpload', () => {
   });
 
   it('renders upload form', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     expect(screen.getByText('Upload Document')).toBeTruthy();
     expect(screen.getByLabelText('Select document file')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Upload' })).toBeTruthy();
   });
 
   it('displays file info when file selected', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -52,7 +52,7 @@ describe('DocumentUpload', () => {
   });
 
   it('rejects non-PDF/text files', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'test.exe', { type: 'application/x-msdownload' });
@@ -67,7 +67,7 @@ describe('DocumentUpload', () => {
   });
 
   it('rejects files larger than 10MB', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const largeFile = new File(['x'.repeat(11 * 1024 * 1024)], 'large.pdf', {
@@ -84,7 +84,7 @@ describe('DocumentUpload', () => {
   });
 
   it('accepts PDF files', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'policy.pdf', { type: 'application/pdf' });
@@ -100,7 +100,7 @@ describe('DocumentUpload', () => {
   });
 
   it('accepts text files', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'policy.txt', { type: 'text/plain' });
@@ -116,7 +116,7 @@ describe('DocumentUpload', () => {
   });
 
   it('accepts CSV files', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'data.csv', { type: 'text/csv' });
@@ -132,13 +132,13 @@ describe('DocumentUpload', () => {
   });
 
   it('disables upload button without file', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const uploadButton = screen.getByRole('button', { name: 'Upload' });
     expect(uploadButton).toHaveAttribute('disabled');
   });
 
   it('enables upload button with valid file', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -154,7 +154,7 @@ describe('DocumentUpload', () => {
   });
 
   it('shows progress during upload', async () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
     const fileInput = screen.getByLabelText('Select document file');
 
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -184,7 +184,7 @@ describe('DocumentUpload', () => {
 
   it('handles successful upload', async () => {
     const onUploadSuccess = vi.fn();
-    render(<DocumentUpload onUploadSuccess={onUploadSuccess} />);
+    render(<DocumentUpload currentUser="user_a" onUploadSuccess={onUploadSuccess} />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -208,7 +208,7 @@ describe('DocumentUpload', () => {
   });
 
   it('handles upload error', async () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -233,7 +233,7 @@ describe('DocumentUpload', () => {
   });
 
   it('handles network error', async () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -255,7 +255,7 @@ describe('DocumentUpload', () => {
   });
 
   it('handles upload abort', async () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -277,7 +277,7 @@ describe('DocumentUpload', () => {
   });
 
   it('clears form on clear button click', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -296,7 +296,7 @@ describe('DocumentUpload', () => {
   });
 
   it('disables buttons during upload', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
@@ -316,7 +316,7 @@ describe('DocumentUpload', () => {
   });
 
   it('sends FormData with correct headers', () => {
-    render(<DocumentUpload />);
+    render(<DocumentUpload currentUser="user_a" />);
 
     const fileInput = screen.getByLabelText('Select document file');
     const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });

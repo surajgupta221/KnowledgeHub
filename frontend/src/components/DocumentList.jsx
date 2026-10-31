@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 
-const DocumentList = forwardRef(({ onSelectDocument }, ref) => {
+const DocumentList = forwardRef(({ currentUser, onSelectDocument }, ref) => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -23,9 +23,15 @@ const DocumentList = forwardRef(({ onSelectDocument }, ref) => {
 
     try {
       const offset = page * ITEMS_PER_PAGE;
-      const response = await fetch(`/api/documents?limit=${ITEMS_PER_PAGE}&offset=${offset}`, {
-        signal: abortControllerRef.current.signal,
-      });
+      const response = await fetch(
+        `/api/documents?limit=${ITEMS_PER_PAGE}&offset=${offset}&user=${currentUser}`,
+        {
+          signal: abortControllerRef.current.signal,
+          headers: {
+            'X-User-ID': currentUser,
+          },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -42,7 +48,7 @@ const DocumentList = forwardRef(({ onSelectDocument }, ref) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   // Fetch documents on page change
   useEffect(() => {

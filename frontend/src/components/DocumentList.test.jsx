@@ -27,7 +27,7 @@ describe('DocumentList', () => {
       json: async () => ({ items: [], total: 0 }),
     });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
     expect(screen.getByText('Documents')).toBeTruthy();
   });
 
@@ -42,11 +42,11 @@ describe('DocumentList', () => {
       }),
     });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=0',
+        '/api/documents?limit=10&offset=0&user=user_a',
         expect.any(Object)
       );
     });
@@ -69,7 +69,7 @@ describe('DocumentList', () => {
         )
     );
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
     expect(screen.getByText('Loading documents...')).toBeTruthy();
   });
 
@@ -79,7 +79,7 @@ describe('DocumentList', () => {
       json: async () => ({ items: [], total: 0 }),
     });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.getByText(/No documents yet/)).toBeTruthy();
@@ -93,7 +93,7 @@ describe('DocumentList', () => {
       statusText: 'Internal Server Error',
     });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.getByText(/HTTP 500/)).toBeTruthy();
@@ -103,7 +103,7 @@ describe('DocumentList', () => {
   it('displays error when fetch throws', async () => {
     mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeTruthy();
@@ -115,7 +115,7 @@ describe('DocumentList', () => {
       Object.assign(new Error('Aborted'), { name: 'AbortError' })
     );
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.queryByRole('alert')).toBeFalsy();
@@ -128,7 +128,7 @@ describe('DocumentList', () => {
       json: async () => ({ items: [], total: 0 }),
     });
 
-    const { unmount } = render(<DocumentList />);
+    const { unmount } = render(<DocumentList currentUser="user_a" />);
 
     unmount();
 
@@ -162,7 +162,7 @@ describe('DocumentList', () => {
         }),
       });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.getByText('doc0.pdf')).toBeTruthy();
@@ -173,7 +173,7 @@ describe('DocumentList', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=10',
+        '/api/documents?limit=10&offset=10&user=user_a',
         expect.any(Object)
       );
     });
@@ -208,7 +208,7 @@ describe('DocumentList', () => {
         }),
       });
 
-    const { rerender } = render(<DocumentList />);
+    const { rerender } = render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       expect(screen.getByText('doc10.pdf')).toBeTruthy();
@@ -239,7 +239,7 @@ describe('DocumentList', () => {
         }),
       });
 
-    rerender(<DocumentList />);
+    rerender(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       const nextButton = screen.getByRole('button', { name: 'Next' });
@@ -255,7 +255,7 @@ describe('DocumentList', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=0',
+        '/api/documents?limit=10&offset=0&user=user_a',
         expect.any(Object)
       );
     });
@@ -274,7 +274,7 @@ describe('DocumentList', () => {
       }),
     });
 
-    render(<DocumentList />);
+    render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
       const prevButton = screen.getByRole('button', { name: 'Previous' });
@@ -297,7 +297,7 @@ describe('DocumentList', () => {
       }),
     });
 
-    render(<DocumentList onSelectDocument={onSelectDocument} />);
+    render(<DocumentList currentUser="user_a" onSelectDocument={onSelectDocument} />);
 
     await waitFor(() => {
       expect(screen.getByText('policy.pdf')).toBeTruthy();

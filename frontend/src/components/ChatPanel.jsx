@@ -11,7 +11,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
  * - Input disabled while streaming
  * - Cleanup on unmount
  */
-export default function ChatPanel({ documentIds = [] }) {
+export default function ChatPanel({ currentUser, documentIds = [] }) {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -64,6 +64,7 @@ export default function ChatPanel({ documentIds = [] }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-User-ID': currentUser,
         },
         body: JSON.stringify({
           question,

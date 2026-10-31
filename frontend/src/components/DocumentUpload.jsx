@@ -10,7 +10,7 @@ import { useState, useRef } from 'react';
  * - Error handling and user feedback
  * - Clears form on successful upload
  */
-export default function DocumentUpload({ onUploadSuccess }) {
+export default function DocumentUpload({ currentUser, onUploadSuccess }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);

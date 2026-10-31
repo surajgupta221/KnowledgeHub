@@ -1,12 +1,20 @@
 import { useState, useRef } from 'react';
+import Login from './components/Login';
 import DocumentList from './components/DocumentList';
 import ChatPanel from './components/ChatPanel';
 import DocumentUpload from './components/DocumentUpload';
 import './App.css';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [selectedDocuments, setSelectedDocuments] = useState([]);
   const documentListRef = useRef(null);
+
+  const handleLogin = (userId) => {
+    setCurrentUser(userId);
+    // Clear selections when switching users
+    setSelectedDocuments([]);
+  };
 
   const handleSelectDocument = (doc) => {
     setSelectedDocuments((prev) => {
@@ -25,19 +33,42 @@ export default function App() {
     }
   };
 
+  if (!currentUser) {
+    return <Login onLoginSuccess={handleLogin} />;
+  }
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>KnowledgeHub</h1>
-        <p>Policy document assistant with streaming QA</p>
+        <div className="header-left">
+          <h1>KnowledgeHub</h1>
+          <p>Policy document assistant with streaming QA</p>
+        </div>
+        <div className="header-right">
+          <span className="user-badge">👤 {currentUser}</span>
+          <button
+            className="btn-logout-header"
+            onClick={() => {
+              sessionStorage.removeItem('current_user');
+              setCurrentUser(null);
+              setSelectedDocuments([]);
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <div className="app-container">
         <aside className="sidebar">
-          <DocumentUpload onUploadSuccess={handleUploadSuccess} />
+          <DocumentUpload 
+            currentUser={currentUser}
+            onUploadSuccess={handleUploadSuccess} 
+          />
 
           <DocumentList
             ref={documentListRef}
+            currentUser={currentUser}
             onSelectDocument={handleSelectDocument}
           />
 
@@ -63,6 +94,7 @@ export default function App() {
 
         <main className="main-content">
           <ChatPanel
+            currentUser={currentUser}
             documentIds={selectedDocuments.map((d) => d.id)}
           />
         </main>
