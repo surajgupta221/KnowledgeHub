@@ -40,7 +40,7 @@ async def upload_document(
     try:
         service = DocumentService(db)
         doc = await service.create_document(
-            title=request.title,
+            filename=request.filename,
             content=request.content,
             owner_id=current_user_id,
         )
@@ -118,7 +118,7 @@ async def list_documents(
             },
         )
         return DocumentListResponse(
-            documents=[DocumentResponse.from_orm(d) for d in docs],
+            items=[DocumentResponse.from_orm(d) for d in docs],
             total=total,
         )
     except Exception as e:
