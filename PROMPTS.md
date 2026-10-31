@@ -1416,5 +1416,139 @@ Job marked as completed with chunk count
 ✅ **Chunks stored in database with embeddings**  
 ✅ **Ready for end-to-end testing** (STEP 4.1)
 
+---
+
+## STEP 3.6-3.7: Docker Compose & API Integration Fix
+
+### Objective
+Get the entire system running in Docker with working API endpoints, then conduct the Q4A Live Demo.
+
+### Issues Encountered & Fixes
+
+**STEP 3.6: Docker Compose Errors**
+
+1. **DATABASE_URL Malformed**
+   - **Problem**: docker-compose.yml had `postgresql://***MASKED***:password@postgres:5432/knowledge`
+   - **Error**: URL parsing failed, psycopg connection rejected
+   - **Fix**: Corrected to `postgresql://postgres:postgres@postgres:5432/knowledge` (real credentials in compose, not production)
+
+2. **SQLAlchemy Async Driver Not Specified**
+   - **Problem**: DATABASE_URL was `postgresql://` not `postgresql+asyncpg://`
+   - **Error**: SQLAlchemy tried to use psycopg (sync) driver instead of asyncpg (async)
+   - **Fix**: Added URL scheme conversion in database.py at module load time:
+     ```python
+     # Convert postgresql:// to postgresql+asyncpg://
+     if url.startswith("postgresql://"):
+       url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+     ```
+
+3. **Greenlet Missing**
+   - **Problem**: asyncpg requires greenlet for asyncio compatibility
+   - **Error**: `ModuleNotFoundError: No module named 'greenlet'`
+   - **Fix**: Added `asyncio` extra to sqlalchemy dependency in pyproject.toml:
+     ```toml
+     sqlalchemy = {version = "^2.0.0", extras = ["asyncio"]}
+     ```
+
+4. **Duplicate Database Engine Initialization**
+   - **Problem**: database.py created engine at module load, dependencies.py created another in init_db()
+   - **Error**: Session factory from one path unavailable to the other
+   - **Fix**: Unified on database.py as single source of truth:
+     - database.py: creates engine + async_session_factory (exported)
+     - dependencies.py: imports async_session_factory directly (no duplicate creation)
+     - main.py: calls init_db() from database.py on startup
+
+**STEP 3.7: API Integration Issues**
+
+1. **Document Router Parameter Mismatch**
+   - **Problem**: create_document() expects `filename`, but router passed `title`
+   - **Error**: TypeError: unexpected keyword argument 'title'
+   - **Fix**: Changed router call to use correct parameter: `filename=request.filename`
+
+2. **Response Field Name Mismatch**
+   - **Problem**: DocumentListResponse schema has `items` field, router returned `documents`
+   - **Error**: Pydantic validation error on response
+   - **Fix**: Changed router response to use correct field: `items=[...]`
+
+3. **Exponential Backoff Jitter Exceeding Max Delay**
+   - **Problem**: Backoff delays could exceed MAX_DELAY (8.0s) due to jitter applied after capping
+   - **Error**: Test failure: `assert 6.4 <= delay_3 <= 8.0` failed with delay_3=8.22s
+   - **Fix**: Reordered operations to apply jitter before capping:
+     ```python
+     # OLD: cap first, then add jitter (WRONG)
+     delay = min(BASE * 2^attempt, MAX)
+     delay += jitter  # Could exceed MAX
+     
+     # NEW: add jitter first, then cap (CORRECT)
+     delay = BASE * 2^attempt
+     delay += jitter
+     delay = min(delay, MAX)  # Cap after jitter
+     ```
+
+### Verification
+
+**Pre-Demo System Check:**
+```
+✅ docker ps shows all containers running:
+   - knowledgehub-frontend-1 (5173)
+   - knowledgehub-backend-1 (8000)
+   - knowledgehub-postgres-1 (5432)
+   
+✅ Backend API responding:
+   GET http://localhost:8000/api/documents/ (200 OK)
+   Response: {"items":[],"total":0}
+   
+✅ All 103 backend tests pass:
+   pytest -q → 103 passed
+   
+✅ System ready for live demo
+```
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `docker-compose.yml` | Fixed DATABASE_URL format, added dependencies |
+| `backend/pyproject.toml` | Added `asyncio` extra to sqlalchemy |
+| `backend/app/database.py` | Added URL scheme conversion (postgresql → postgresql+asyncpg) |
+| `backend/app/dependencies.py` | Removed duplicate engine, import from database.py |
+| `backend/app/routers/document_router.py` | Fixed parameter name (title → filename) and response field (documents → items) |
+| `backend/app/services/llm_client.py` | Fixed backoff jitter to not exceed MAX_DELAY |
+| `DEMO.md` | Created comprehensive 5-minute demo walkthrough script |
+| `REVIEW.md` | Updated with STEP 3.7 completion status |
+
+### Architecture Lessons Learned
+
+1. **Async Driver URL Scheme Required**
+   - SQLAlchemy doesn't infer driver from context
+   - Must explicitly specify in URL scheme: `postgresql+asyncpg://`
+   - Conversion at module load time simpler than dependency injection
+
+2. **Single Source of Truth for Database Setup**
+   - One module should create engine + session factory
+   - Other modules import and use, don't recreate
+   - Prevents initialization race conditions
+
+3. **Test Parameter Validation Early**
+   - Parameter name mismatches caught by static analysis or early integration tests
+   - Run API tests immediately after endpoint creation
+   - Use curl/Invoke-WebRequest to test before integrating UI
+
+4. **Exponential Backoff Math**
+   - Cap maximum delay AFTER applying jitter (not before)
+   - Otherwise jitter can push over max
+   - Document in code comments to prevent regression
+
+### Demo Readiness
+
+✅ **Backend**: API responds correctly, all tests pass  
+✅ **Frontend**: Login UI visible at localhost:5173  
+✅ **Database**: PostgreSQL running, migrations applied  
+✅ **Mock LLM**: Available for streaming chat (background service)  
+✅ **Multi-tenant**: User A and User B can both login  
+✅ **Next Steps**: Execute Q4A Live Demo script (DEMO.md)
+
+
+
 
 
