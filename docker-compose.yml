@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -20,22 +18,20 @@ services:
   mock_llm:
     image: python:3.11-slim
     working_dir: /app
-    command: python -m pytest --co -q 2>/dev/null || python mock_llm_server.py
+    command: python mock_llm_server.py
     environment:
       PYTHONUNBUFFERED: "1"
     ports:
       - "8001:8001"
     volumes:
       - ./backend:/app
-    depends_on:
-      - postgres
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://knowledge_user:knowledge_pass@postgres:5432/knowledge_hub
+      DATABASE_URL: postgresql://knowledge_user:knowledge_pass@postgres:5432/knowledge_hub
       MOCK_LLM_URL: http://mock_llm:8001
       LOG_LEVEL: INFO
     ports:
@@ -45,14 +41,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mock_llm:
+        condition: service_started
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    environment:
-      VITE_API_BASE: http://localhost:8000/api
     ports:
       - "5173:5173"
     volumes:

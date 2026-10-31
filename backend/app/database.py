@@ -9,9 +9,14 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 
+# Convert postgresql:// URL to postgresql+asyncpg:// for async support
+database_url = settings.database_url
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Create async engine
 engine = create_async_engine(
-    settings.database_url,
+    database_url,
     echo=False,
     pool_size=10,
     max_overflow=20,

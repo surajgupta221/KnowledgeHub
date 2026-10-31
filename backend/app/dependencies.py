@@ -3,30 +3,9 @@
 from typing import AsyncGenerator
 
 from fastapi import Request
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-
-
-# Global engine and session factory (created once per app startup)
-_engine = None
-_async_session_factory = None
-
-
-async def init_db() -> None:
-    """Initialize database engine and session factory (call on app startup)."""
-    global _engine, _async_session_factory
-    _engine = create_async_engine(settings.database_url, echo=False)
-    _async_session_factory = async_sessionmaker(
-        _engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-
-async def close_db() -> None:
-    """Close database connections (call on app shutdown)."""
-    global _engine
-    if _engine:
-        await _engine.dispose()
+from app.database import async_session_factory
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -37,11 +16,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         async def my_endpoint(db: AsyncSession = Depends(get_db)):
             ...
     """
-    if not _async_session_factory:
+    if not async_session_factory:
         raise RuntimeError(
-            "Database not initialized. Call init_db() on app startup."
+            "Database not initialized."
         )
-    async with _async_session_factory() as session:
+    async with async_session_factory() as session:
         yield session
 
 
