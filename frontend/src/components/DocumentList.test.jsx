@@ -261,7 +261,7 @@ describe('DocumentList', () => {
     });
   });
 
-  it('disables navigation buttons at boundaries', async () => {
+  it('hides pagination when all documents fit on one page', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -277,11 +277,10 @@ describe('DocumentList', () => {
     render(<DocumentList currentUser="user_a" />);
 
     await waitFor(() => {
-      const prevButton = screen.getByRole('button', { name: 'Previous' });
-      const nextButton = screen.getByRole('button', { name: 'Next' });
-      expect(prevButton).toHaveAttribute('disabled');
-      expect(nextButton).toHaveAttribute('disabled');
+      expect(screen.getByText('doc0.pdf')).toBeTruthy();
     });
+    expect(screen.queryByRole('button', { name: 'Previous' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
   });
 
   it('calls onSelectDocument when View button clicked', async () => {

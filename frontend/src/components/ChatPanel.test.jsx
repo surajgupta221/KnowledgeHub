@@ -26,15 +26,8 @@ describe('ChatPanel', () => {
   });
 
   it('disables input while loading', async () => {
-    const mockStream = new ReadableStream({
-      start(controller) {
-        // Send a few tokens then close
-        setTimeout(() => {
-          controller.enqueue(new TextEncoder().encode('data: {"event": "token", "data": "hello"}\n\n'));
-          controller.close();
-        }, 10);
-      },
-    });
+    // Stream stays open so the component remains in the loading state
+    const mockStream = new ReadableStream({ start() {} });
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -180,25 +173,11 @@ describe('ChatPanel', () => {
   });
 
   it('cleans up fetch on unmount', async () => {
-    const abortSpy = vi.fn();
-    let abortController;
+    const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
 
-    mockFetch.mockImplementationOnce(() => {
-      return new Promise((resolve) => {
-        abortController = new AbortController();
-        abortController.abort = abortSpy;
-
-        resolve({
-          ok: true,
-          body: new ReadableStream({
-            start(controller) {
-              setTimeout(() => {
-                controller.enqueue(new TextEncoder().encode('data: {"event": "token"}\n\n'));
-              }, 100);
-            },
-          }),
-        });
-      });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({ start() {} }),
     });
 
     const user = userEvent.setup();
@@ -211,10 +190,8 @@ describe('ChatPanel', () => {
     // Unmount should trigger abort cleanup
     unmount();
 
-    await waitFor(() => {
-      // Abort should have been called on cleanup
-      expect(abortSpy).toHaveBeenCalled();
-    });
+    expect(abortSpy).toHaveBeenCalled();
+    abortSpy.mockRestore();
   });
 
   it('handles done event correctly', async () => {

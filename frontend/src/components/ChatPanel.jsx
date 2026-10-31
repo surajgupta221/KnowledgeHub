@@ -51,13 +51,20 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
    * On client disconnect (AbortController abort), fetch is cancelled
    * and resources cleaned up.
    */
-  const handleStream = useCallback(async () => {
+  const handleStream = useCallback(async (questionText, assistantId) => {
     setLoading(true);
     setStopped(false);
     setError(null);
     bufferRef.current = '';
 
     abortControllerRef.current = new AbortController();
+
+    // Tokens are accumulated here and written to the assistant message by id
+    let content = '';
+    const showContent = () =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content } : m))
+      );
 
     try {
       const response = await fetch('http://localhost:8000/api/chat/stream', {
@@ -67,7 +74,7 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
           'X-User-ID': currentUser,
         },
         body: JSON.stringify({
-          question,
+          question: questionText,
           document_ids: documentIds,
         }),
         signal: abortControllerRef.current.signal,
@@ -78,36 +85,19 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
       }
 
       const reader = response.body.getReader();
-      const decoder = new TextDecoder({ stream: true });
+      const decoder = new TextDecoder();
+      let finished = false;
 
-      let currentMessage = {
-        id: messageIdRef.current++,
-        role: 'assistant',
-        content: '',
-      };
-
-      while (true) {
+      while (!finished) {
         const { done, value } = await reader.read();
+        if (done) break;
 
-        if (done) {
-          // Stream completed, add final message if it has content
-          if (currentMessage.content.trim()) {
-            setMessages((prev) => [...prev, currentMessage]);
-          }
-          break;
-        }
+        bufferRef.current += decoder.decode(value, { stream: true });
 
-        // Decode chunk
-        const chunk = decoder.decode(value, { stream: true });
-        bufferRef.current += chunk;
-
-        // Split on "\n\n" to find complete SSE events
+        // Split on "\n\n" to find complete SSE events; keep the incomplete tail
         const events = bufferRef.current.split('\n\n');
-
-        // Keep the last incomplete event in buffer
         bufferRef.current = events.pop() || '';
 
-        // Process complete events
         for (const eventLine of events) {
           if (!eventLine.trim()) continue;
 
@@ -115,33 +105,18 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
           if (!eventData) continue;
 
           if (eventData.event === 'token') {
-            currentMessage.content += eventData.data || '';
+            content += eventData.data || '';
           } else if (eventData.event === 'done') {
-            if (currentMessage.content.trim()) {
-              setMessages((prev) => [...prev, currentMessage]);
-            }
-            currentMessage = {
-              id: messageIdRef.current++,
-              role: 'assistant',
-              content: '',
-            };
+            finished = true;
+            break;
           } else if (eventData.event === 'error') {
             setError(eventData.data || 'Unknown error');
+            finished = true;
             break;
           }
         }
 
-        // Update messages state to show streaming progress
-        setMessages((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-            updated[lastIdx] = { ...updated[lastIdx], content: currentMessage.content };
-          } else if (currentMessage.content.trim()) {
-            updated.push(currentMessage);
-          }
-          return updated;
-        });
+        showContent();
       }
 
       setLoading(false);
@@ -150,10 +125,10 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
         setStopped(true);
       } else {
         setError(err.message || 'Failed to fetch chat response');
-        setLoading(false);
       }
+      setLoading(false);
     }
-  }, [question, documentIds]);
+  }, [currentUser, documentIds]);
 
   /**
    * Handle Stop button click.
@@ -185,16 +160,14 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (question.trim() && !loading) {
-      // Add user message
+      const assistantId = messageIdRef.current + 1;
       setMessages((prev) => [
         ...prev,
-        {
-          id: messageIdRef.current++,
-          role: 'user',
-          content: question,
-        },
+        { id: messageIdRef.current, role: 'user', content: question },
+        { id: assistantId, role: 'assistant', content: '' },
       ]);
-      handleStream();
+      messageIdRef.current += 2;
+      handleStream(question, assistantId);
       setQuestion('');
     }
   };
@@ -202,12 +175,14 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
   return (
     <div className="chat-panel">
       <div className="chat-messages">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`message message-${msg.role}`}>
-            <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
-            <p>{msg.content}</p>
-          </div>
-        ))}
+        {messages
+          .filter((msg) => msg.role === 'user' || msg.content)
+          .map((msg) => (
+            <div key={msg.id} className={`message message-${msg.role}`}>
+              <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
+              <p>{msg.content}</p>
+            </div>
+          ))}
       </div>
 
       {error && <div className="error-message">{error}</div>}

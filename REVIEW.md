@@ -257,8 +257,11 @@ The AI-written `document_router.py` contains **11 critical/high issues** violati
 | 21 | 🟠 HIGH | `docker-compose.yml` | `mock_llm` ran in bare `python:3.11-slim` (no uvicorn) and exited immediately | Built from the backend image |
 | 22 | 🟠 HIGH | `chat_router.py` | Body param named `request` shadowed the Starlette request -> `is_disconnected()` crashed every stream | Separate `http_request: Request`; error event built with `json.dumps` |
 | 23 | 🟡 MEDIUM | `chat_service.py` | `_build_context` called `retrieve_relevant_chunks` with wrong kwargs -> RAG context always errored | Correct kwargs; test added |
+| 24 | 🟠 HIGH | `ChatPanel.jsx` | `new TextDecoder({ stream: true })` passes an object as the encoding label -> every question failed with "encoding label '[object Object]' is invalid" | `new TextDecoder()`; `stream` stays on `decode()` |
+| 25 | 🟠 HIGH | `ChatPanel.jsx` | `done` event appended the assistant message a second time, then the next state update overwrote it with empty content; `X-User-ID` closure was stale | Assistant placeholder per question updated by id; `currentUser` in deps |
+| 26 | ⚪ LOW | `ChatPanel.test.jsx`, `DocumentList.test.jsx` | 2 tests were racy/spied on an unused AbortController; 1 expected pagination buttons the component intentionally hides on a single page | Tests corrected; full frontend suite now 46/46 |
 
-**Known gaps (not fixed):** `ChatPanel`/`DocumentList` frontend tests have 5 failing tests; mock embeddings are random, so retrieval rarely passes the 0.7 similarity threshold with the mock LLM; the UI has no Summarize button; pending jobs from failed attempts are not retried after restart.
+**Known gaps (not fixed):** mock embeddings are random, so retrieval rarely passes the 0.7 similarity threshold with the mock LLM; the UI has no Summarize button; pending jobs from failed attempts are not retried after restart.
 
 ---
 
