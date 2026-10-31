@@ -113,6 +113,18 @@ class TestChunkingGroupSentences:
         # Should be empty or very few chunks (below minimum)
         assert len(chunks) <= 1
 
+    def test_short_document_still_produces_single_chunk(self):
+        """A document below min_chunk_size must not become unsearchable."""
+        service = ChunkingService()  # default min_chunk_size=100 tokens
+        text = "Passwords must be rotated every 90 days. MFA is mandatory for all employees."
+
+        chunks = service.chunk_text(text, document_id=7)
+
+        assert len(chunks) == 1
+        assert chunks[0]["document_id"] == 7
+        assert chunks[0]["sequence"] == 0
+        assert "MFA is mandatory" in chunks[0]["text"]
+
     def test_group_sentences_overlap(self):
         """Test that overlap is applied between chunks."""
         service = ChunkingService(

@@ -163,8 +163,11 @@ class ChunkingService:
             current_chunk_sentences.append(sentence)
             current_chunk_tokens += token_count
 
-        # Save final chunk if it meets minimum size
-        if current_chunk_sentences and current_chunk_tokens >= self.min_chunk_size:
+        # Save final chunk if it meets minimum size, or if it is the only chunk
+        # (a short document must still be searchable)
+        if current_chunk_sentences and (
+            current_chunk_tokens >= self.min_chunk_size or not chunks
+        ):
             chunk_text = " ".join(current_chunk_sentences)
             chunks.append({
                 "document_id": document_id,

@@ -4,12 +4,22 @@ import { useState, useRef } from 'react';
  * DocumentUpload component for uploading policy documents.
  *
  * Features:
- * - File input validation (PDF/text only, max 10MB)
- * - FormData for multipart/form-data submission
+ * - File input validation (TXT/CSV only, max 10MB)
+ * - Reads the file as text and POSTs JSON {filename, content} to /api/documents/upload
+ * - Sends the X-User-ID header so the document is owned by the logged-in user
  * - Progress tracking via XMLHttpRequest
  * - Error handling and user feedback
  * - Clears form on successful upload
  */
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
 export default function DocumentUpload({ currentUser, onUploadSuccess }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -19,7 +29,8 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
   const fileInputRef = useRef(null);
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  const ALLOWED_TYPES = ['application/pdf', 'text/plain', 'text/csv'];
+  // Extension based: browsers report CSV as application/vnd.ms-excel on Windows
+  const ALLOWED_EXTENSIONS = ['.txt', '.csv'];
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files?.[0];
@@ -32,8 +43,9 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
     }
 
     // Validate file type
-    if (!ALLOWED_TYPES.includes(selectedFile.type)) {
-      setError('Invalid file type. Please upload a PDF, text, or CSV file.');
+    const name = selectedFile.name.toLowerCase();
+    if (!ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+      setError('Invalid file type. Please upload a TXT or CSV file.');
       setFile(null);
       return;
     }
@@ -58,6 +70,21 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
     setProgress(0);
     setError(null);
     setSuccess(false);
+
+    let content;
+    try {
+      content = await readFileAsText(file);
+    } catch (e) {
+      setUploading(false);
+      setError('Could not read the selected file.');
+      return;
+    }
+
+    if (!content.trim()) {
+      setUploading(false);
+      setError('File is empty.');
+      return;
+    }
 
     // Use XMLHttpRequest for progress tracking
     const xhr = new XMLHttpRequest();
@@ -108,13 +135,10 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
       setError('Upload cancelled.');
     });
 
-    // Prepare FormData
-    const formData = new FormData();
-    formData.append('file', file);
-
-    // Send request
-    xhr.open('POST', 'http://localhost:8000/api/documents', true);
-    xhr.send(formData);
+    xhr.open('POST', 'http://localhost:8000/api/documents/upload', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('X-User-ID', currentUser);
+    xhr.send(JSON.stringify({ filename: file.name, content }));
   };
 
   const handleClear = () => {
@@ -147,7 +171,7 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.txt,.csv"
+          accept=".txt,.csv"
           onChange={handleFileChange}
           disabled={uploading}
           className="file-input"
@@ -194,7 +218,7 @@ export default function DocumentUpload({ currentUser, onUploadSuccess }) {
       </div>
 
       <div className="upload-info">
-        <p>Supported: PDF, TXT, CSV</p>
+        <p>Supported: TXT, CSV</p>
         <p>Max size: 10MB</p>
       </div>
     </div>

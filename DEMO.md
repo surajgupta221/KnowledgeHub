@@ -54,15 +54,14 @@ Har user ke docs alag hote hain—database query mein hi filter hota hai, not af
 
 **Steps:**
 1. Click "Login as User A" button
-2. Click "Upload Document" 
-3. Enter filename: `HR_Policy_2024.txt`
-4. Paste or enter document content (e.g., sample HR policy text)
-5. Click "Upload"
-6. Wait for success message (check browser console for embedding job id)
+2. In "Upload Document", click "Choose File" and pick a `.txt` or `.csv` policy file (PDF is not supported yet)
+3. Click "Upload"
+4. Wait for the "Document uploaded successfully!" message
+5. The document appears in the "Documents" list; chunking and embedding run in the background
 
 **Expected outcome:**
-- ✅ Document appears in "My Documents" list
-- ✅ Backend logged embedding job queue
+- ✅ Document appears in "Documents" list
+- ✅ Backend logs show the embed job completing (a chunk with an embedding row exists in Postgres)
 - ✅ No errors in browser console or backend logs
 
 ---
@@ -195,38 +194,31 @@ Har user ke docs alag hote hain—database query mein hi filter hota hai, not af
 **You say (Hinglish):**
 "Document ko 'Summarize' karo. Server turant job_id de deta hai, wait nahi karata. Parde ke peeche: background worker pool mein kaam chal raha hai. Polling kar sakte ho, ya browser close kar sakte ho—job chal rahi rahegi. Slow kaam background mein, user ko turant response."
 
-**Steps:**
-1. Click "Logout" to go back to User A
-2. Click "Login as User A" again
-3. Open DevTools (F12)
-4. In the documents list, click "Summarize" button next to the uploaded document
-5. In the Network tab, look for the /api/jobs response
-6. Verify response is 202 (not 200)
-7. Copy the job_id from the response
-8. In the Console, run:
+**Steps (the UI has no Summarize button yet, so use the API from the DevTools console):**
+1. Log in as User A and open DevTools (F12) > Console
+2. Replace `DOC_ID` with the id of the uploaded document and run:
    ```javascript
-   // Poll for job status
+   const r = await fetch('http://localhost:8000/api/documents/DOC_ID/summary', {method: 'POST', headers: {'X-User-ID': 'user_a'}});
+   console.log(r.status, await r.json());   // 202 {job_id, status: "pending"}
+   ```
+3. Poll the job with the returned `job_id`:
+   ```javascript
    async function pollJob(jobId) {
      for (let i = 0; i < 10; i++) {
-       const r = await fetch(`/api/jobs/${jobId}`, {headers: {'X-User-ID': 'user_a'}});
+       const r = await fetch(`http://localhost:8000/api/jobs/${jobId}`, {headers: {'X-User-ID': 'user_a'}});
        const data = await r.json();
        console.log(`Attempt ${i+1}:`, data.status);
-       if (data.status === 'completed') {
-         console.log('Job finished:', data);
-         break;
-       }
+       if (data.status === 'completed') { console.log('Job finished:', data); break; }
        await new Promise(r => setTimeout(r, 2000));
      }
    }
-   pollJob('PASTE_JOB_ID_HERE');
+   pollJob(JOB_ID);
    ```
-9. Wait for job to complete (or timeout)
 
 **Expected outcome:**
-- ✅ Summarize button click returns 202 (not 200)
-- ✅ Response includes job_id
-- ✅ Polling shows job progressing (pending → in_progress → completed)
-- ✅ (Optional) Final result includes summary text
+- ✅ The POST returns 202 (not 200) with a job_id immediately
+- ✅ Polling shows the job progressing (pending → completed)
+- ✅ Final result includes summary text
 
 ---
 

@@ -177,10 +177,8 @@ class ChatService:
 
             # Step 2: Retrieve relevant chunks
             retrieved_chunks = await self.retrieval_service.retrieve_relevant_chunks(
-                question_embedding=question_embedding,
+                query_embedding=question_embedding,
                 document_ids=document_ids,
-                top_k=5,
-                similarity_threshold=0.5,
             )
 
             # Step 3: Format chunks for context

@@ -1,5 +1,6 @@
 """Chat router with streaming endpoint."""
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 @router.post("/stream")
 async def stream_chat(
+    http_request: Request,
     request: ChatStreamRequest,
     current_user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -45,6 +47,7 @@ async def stream_chat(
     - Resources are properly cleaned up
 
     Args:
+        http_request: Raw request, used to detect client disconnects
         request: ChatStreamRequest with question and document_ids
         current_user_id: Current user (from auth context)
         db: Database session
@@ -85,7 +88,7 @@ async def stream_chat(
             """
             Generate SSE events from chat stream.
 
-            On client disconnect (request.is_disconnected()), the generator
+            On client disconnect (http_request.is_disconnected()), the generator
             will exit and the upstream LLM connection will be closed by the
             async context manager in stream_answer().
             """
@@ -96,7 +99,7 @@ async def stream_chat(
                     current_user_id,
                 ):
                     # Check if client disconnected
-                    if await request.is_disconnected():
+                    if await http_request.is_disconnected():
                         logger.info(
                             "Client disconnected, stopping stream",
                             extra={"user_id": current_user_id},
@@ -108,7 +111,9 @@ async def stream_chat(
                     "Stream generation failed",
                     extra={"user_id": current_user_id, "error": str(e)},
                 )
-                error_event = f'data: {{"event": "error", "data": "{str(e)}"}}\n\n'
+                error_event = (
+                    f"data: {json.dumps({'event': 'error', 'data': 'Stream failed'})}\n\n"
+                )
                 yield error_event
 
         return StreamingResponse(

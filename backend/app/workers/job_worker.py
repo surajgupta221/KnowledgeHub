@@ -141,28 +141,27 @@ class JobWorker:
             logger.warning(f"No chunks created for document {document_id}")
             return 0
 
-        # Step 2: Generate embeddings
-        embedding_service = EmbeddingService(session)
-        chunks_with_embeddings = await embedding_service.embed_chunks(
-            document_id, chunks
-        )
-
-        # Step 3: Store chunks in DB
+        # Step 2: Persist chunks (replacing any left by a previous attempt)
         chunk_repo = ChunkRepository(session)
-        for chunk_data in chunks_with_embeddings:
+        await chunk_repo.delete_chunks_for_document(document_id)
+        stored_chunks = [
             await chunk_repo.create_chunk(
                 document_id=chunk_data["document_id"],
                 sequence=chunk_data["sequence"],
                 text=chunk_data["text"],
                 tokens=chunk_data.get("token_estimate"),
-                embedding=chunk_data.get("embedding"),
             )
+            for chunk_data in chunks
+        ]
 
-        await session.commit()
-        logger.info(
-            f"Embedded document {document_id}: {len(chunks_with_embeddings)} chunks"
+        # Step 3: Generate embeddings; EmbeddingService fills them in and commits
+        embedding_service = EmbeddingService(session)
+        embedded_count = await embedding_service.embed_chunks(
+            document_id, stored_chunks
         )
-        return len(chunks_with_embeddings)
+
+        logger.info(f"Embedded document {document_id}: {embedded_count} chunks")
+        return embedded_count
 
     async def stop(self) -> None:
         """Stop worker gracefully."""

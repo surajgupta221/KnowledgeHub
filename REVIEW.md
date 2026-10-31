@@ -246,6 +246,22 @@ The AI-written `document_router.py` contains **11 critical/high issues** violati
 
 ---
 
+## STEP 3.8: Defects found while running the real stack (upload -> ask -> summarize)
+
+| # | Severity | Location | Defect | Fix |
+|---|----------|----------|--------|-----|
+| 17 | 🟠 HIGH | `DocumentUpload.jsx` | Sent multipart `POST /api/documents/` with no `X-User-ID`; backend only has `POST /api/documents/upload` (JSON) -> 405, and uploads would be attributed to `user_a` | Reads file as text, POSTs JSON `{filename, content}` to `/upload` with `X-User-ID`; TXT/CSV only (no PDF parser), validated by extension |
+| 18 | 🟠 HIGH | `document_schemas.py` | `DocumentResponse.metadata` resolved to SQLAlchemy `MetaData` -> every upload/list of a real document returned 500 | Field renamed to `doc_metadata` (matches the ORM column); regression test added |
+| 19 | 🟠 HIGH | `chunking_service.py` | Chunks under 100 tokens were dropped, so short documents produced zero chunks and were never retrievable | Sole/final chunk is always kept |
+| 20 | 🟠 HIGH | `job_worker.py` | Passed chunker dicts to `EmbeddingService.embed_chunks` (expects ORM `Chunk`) -> every embed job failed | Worker persists chunks first, then embeds them; idempotent on retry |
+| 21 | 🟠 HIGH | `docker-compose.yml` | `mock_llm` ran in bare `python:3.11-slim` (no uvicorn) and exited immediately | Built from the backend image |
+| 22 | 🟠 HIGH | `chat_router.py` | Body param named `request` shadowed the Starlette request -> `is_disconnected()` crashed every stream | Separate `http_request: Request`; error event built with `json.dumps` |
+| 23 | 🟡 MEDIUM | `chat_service.py` | `_build_context` called `retrieve_relevant_chunks` with wrong kwargs -> RAG context always errored | Correct kwargs; test added |
+
+**Known gaps (not fixed):** `ChatPanel`/`DocumentList` frontend tests have 5 failing tests; mock embeddings are random, so retrieval rarely passes the 0.7 similarity threshold with the mock LLM; the UI has no Summarize button; pending jobs from failed attempts are not retried after restart.
+
+---
+
 ## Verification Checklist (Before Deployment)
 
 - [x] No user_id from query params (removed, now uses X-User-ID header)
@@ -274,7 +290,7 @@ The AI-written `document_router.py` contains **11 critical/high issues** violati
 - ✅ Backend starts: "Application startup complete"
 - ✅ API responds: GET /api/documents/ returns {"items":[],"total":0}
 - ✅ All 103 pytest tests pass
-- ✅ Docker compose services running (postgres, backend, frontend, mock_llm)
+- ✅ Docker compose services running (postgres, backend, frontend); mock_llm was crashing until STEP 3.8
 
 **Status:** Ready for live demo walkthrough
 

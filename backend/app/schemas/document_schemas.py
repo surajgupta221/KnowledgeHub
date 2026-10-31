@@ -12,7 +12,7 @@ class DocumentResponse(BaseModel):
     filename: str
     owner_id: str
     content: Optional[str] = None
-    metadata: Optional[str] = None
+    doc_metadata: Optional[str] = None
     created_at: datetime
 
     class Config:
