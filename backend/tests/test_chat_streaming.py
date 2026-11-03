@@ -47,7 +47,7 @@ def test_chat_stream_endpoint_exists():
             router = route.original_router
             for subroute in router.routes:
                 routes.append(subroute.path)
-    
+
     # Should have /api/chat/stream endpoint
     assert "/api/chat/stream" in routes
 

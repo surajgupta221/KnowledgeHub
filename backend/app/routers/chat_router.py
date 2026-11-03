@@ -7,14 +7,41 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
-from app.schemas.chat_schemas import ChatStreamRequest
+from app.dependencies import get_current_user, get_db, get_llm_client
+from app.schemas.chat_schemas import ChatStreamRequest, RagAnswer
 from app.services.chat_service import ChatService
-from app.services.llm_client import LlmClient
+from app.services.llm_client import LlmClient, LlmUnavailableError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+
+@router.post("/answer", response_model=RagAnswer)
+async def structured_answer(
+    request: ChatStreamRequest,
+    current_user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    llm_client: LlmClient = Depends(get_llm_client),
+) -> RagAnswer:
+    """Non-streaming RAG answer validated against the RagAnswer JSON schema."""
+    service = ChatService(db, llm_client)
+    if not await service.verify_document_ownership(
+        request.document_ids, current_user_id
+    ):
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        return await service.answer_structured(
+            request.question, request.document_ids, current_user_id
+        )
+    except LlmUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service temporarily unavailable",
+            headers={"Retry-After": "10"},
+        )
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Invalid answer from AI service")
 
 
 @router.post("/stream")
@@ -23,6 +50,7 @@ async def stream_chat(
     request: ChatStreamRequest,
     current_user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    llm_client: LlmClient = Depends(get_llm_client),
 ) -> StreamingResponse:
     """
     Stream chat completion as Server-Sent Events (SSE).
@@ -56,7 +84,7 @@ async def stream_chat(
         StreamingResponse with text/event-stream media type
     """
     try:
-        service = ChatService(db, LlmClient())
+        service = ChatService(db, llm_client)
 
         # Verify user owns all requested documents
         owns_all = await service.verify_document_ownership(
@@ -70,9 +98,8 @@ async def stream_chat(
                     "doc_ids": request.document_ids,
                 },
             )
-            raise HTTPException(
-                status_code=403, detail="You do not own all requested documents"
-            )
+            # 404 (not 403) so document existence is not revealed across tenants
+            raise HTTPException(status_code=404, detail="Document not found")
 
         logger.info(
             "Chat stream started",

@@ -3,7 +3,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
 from app.database import init_db, close_db
 from app.workers.job_worker import start_worker, stop_worker
 from app.routers import document_router, chat_router, job_router

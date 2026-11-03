@@ -234,7 +234,7 @@
   margin-bottom: 1rem;
 }
 
-
+.main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -425,12 +425,122 @@
 .chat-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0; /* lets the message list shrink and scroll instead of overflowing */
   background-color: white;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.chat-messages .message {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chat-messages .message p {
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+}
+
+.message-user {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.message-assistant {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.chat-panel .error-message,
+.stopped-message {
+  flex: none;
+  margin: 0 1rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.stopped-message {
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+}
+
+.chat-form {
+  flex: none;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  padding: 1rem;
+  border-top: 1px solid #e0e0e0;
+  background-color: #f9f9f9;
+}
+
+.chat-form textarea {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: none;
+}
+
+.chat-form textarea:focus {
+  outline: none;
+  border-color: #0275d8;
+  box-shadow: 0 0 0 3px rgba(2, 117, 216, 0.1);
+}
+
+.chat-form textarea:disabled {
+  background-color: #e9ecef;
+  cursor: not-allowed;
+}
+
+.form-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-buttons button {
+  padding: 0.6rem 1.25rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  min-width: 100px;
+  background-color: #5cb85c;
+  color: white;
+}
+
+.form-buttons button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.form-buttons .stop-button {
+  background-color: #d9534f;
+}
+
+.form-buttons .stop-button:hover {
+  background-color: #c9302c;
+}
+
 
 .chat-panel h2 {
   margin: 0;

@@ -1,12 +1,9 @@
 """Tests for background job queue."""
 
 import pytest
-import asyncio
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.job_service import JobService
-from app.models.job import Job
 
 
 @pytest.mark.asyncio

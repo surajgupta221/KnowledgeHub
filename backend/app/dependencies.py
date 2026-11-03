@@ -1,11 +1,15 @@
 """FastAPI dependencies for injection."""
 
+import re
 from typing import AsyncGenerator
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
+from app.services.llm_client import LlmClient
+
+USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]{1,64}$")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -41,7 +45,15 @@ async def get_current_user(request: Request) -> str:
             ...
     """
     user_id = request.headers.get("X-User-ID")
-    if not user_id:
-        # Fallback for testing
-        user_id = "user_a"
+    if not user_id or not USER_ID_PATTERN.fullmatch(user_id):
+        raise HTTPException(status_code=401, detail="Missing or invalid user identity")
     return user_id
+
+
+def get_llm_client(request: Request) -> LlmClient:
+    """Dependency: the application-wide LLM client (shares the circuit breaker)."""
+    state = request.app.state
+    if getattr(state, "llm_client", None) is None:
+        state.llm_client = LlmClient()
+    client: LlmClient = state.llm_client
+    return client

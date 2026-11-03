@@ -21,6 +21,12 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
   const abortControllerRef = useRef(null);
   const bufferRef = useRef('');
   const messageIdRef = useRef(0);
+  const messagesEndRef = useRef(null);
+
+  // Keep the newest streamed token in view
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [messages]);
 
   /**
    * Parse SSE event from buffered lines.
@@ -183,6 +189,7 @@ export default function ChatPanel({ currentUser, documentIds = [] }) {
               <p>{msg.content}</p>
             </div>
           ))}
+        <div ref={messagesEndRef} />
       </div>
 
       {error && <div className="error-message">{error}</div>}

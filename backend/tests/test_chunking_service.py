@@ -1,6 +1,5 @@
 """Tests for chunking service."""
 
-import pytest
 
 from app.services.chunking_service import ChunkingService
 
@@ -12,9 +11,9 @@ class TestChunkingSplitSentences:
         """Test basic sentence splitting."""
         service = ChunkingService()
         text = "First sentence. Second sentence. Third sentence."
-        
+
         sentences = service._split_sentences(text)
-        
+
         assert len(sentences) == 3
         assert sentences[0] == "First sentence."
         assert sentences[1] == "Second sentence."
@@ -24,9 +23,9 @@ class TestChunkingSplitSentences:
         """Test splitting with various punctuation."""
         service = ChunkingService()
         text = "Question? Yes! Exclamation. End."
-        
+
         sentences = service._split_sentences(text)
-        
+
         assert len(sentences) == 4
         assert sentences[0] == "Question?"
         assert sentences[1] == "Yes!"
@@ -36,9 +35,9 @@ class TestChunkingSplitSentences:
         """Test that extra whitespace is normalized."""
         service = ChunkingService()
         text = "First  sentence.\n\nSecond   sentence."
-        
+
         sentences = service._split_sentences(text)
-        
+
         assert len(sentences) == 2
         assert sentences[0] == "First sentence."
         assert sentences[1] == "Second sentence."
@@ -47,7 +46,7 @@ class TestChunkingSplitSentences:
         """Test empty text handling."""
         service = ChunkingService()
         sentences = service._split_sentences("")
-        
+
         assert sentences == []
 
 
@@ -57,11 +56,11 @@ class TestChunkingTokenEstimate:
     def test_token_estimate_calculation(self):
         """Test that token estimate is roughly correct."""
         service = ChunkingService()
-        
+
         # "This is a test" ≈ 4 words ≈ 4-5 tokens
         text = "This is a test sentence with several words."
         tokens = service._estimate_tokens(text)
-        
+
         # Should be positive and reasonable
         assert tokens > 0
         assert tokens < len(text)  # Fewer tokens than characters
@@ -70,7 +69,7 @@ class TestChunkingTokenEstimate:
         """Test empty text returns 1 token minimum."""
         service = ChunkingService()
         tokens = service._estimate_tokens("")
-        
+
         assert tokens == 1  # Minimum 1 token
 
 
@@ -89,12 +88,12 @@ class TestChunkingGroupSentences:
             "Finally a fifth sentence to include more data and ensure chunk splitting.",
             "And a sixth sentence with even more information to ensure multiple chunks.",
         ]
-        
+
         chunks = service._group_sentences_into_chunks(sentences, document_id=1)
-        
+
         # Should have created at least one chunk (test the structure works)
         assert len(chunks) >= 1
-        
+
         # Each chunk should have correct structure
         for i, chunk in enumerate(chunks):
             assert chunk["sequence"] == i
@@ -107,9 +106,9 @@ class TestChunkingGroupSentences:
         """Test that small chunks are filtered out."""
         service = ChunkingService(chunk_size=1000, min_chunk_size=50)
         sentences = ["Short.", "Also short."]
-        
+
         chunks = service._group_sentences_into_chunks(sentences, document_id=1)
-        
+
         # Should be empty or very few chunks (below minimum)
         assert len(chunks) <= 1
 
@@ -139,9 +138,9 @@ class TestChunkingGroupSentences:
             "Fourth sentence here.",
             "Fifth sentence here.",
         ]
-        
+
         chunks = service._group_sentences_into_chunks(sentences, document_id=1)
-        
+
         # With overlap, chunks should share some text
         if len(chunks) > 1:
             # Check that first sentence of chunk N appears in chunk N-1 or N
@@ -159,7 +158,7 @@ class TestChunkingIntegration:
             chunk_overlap=10,
             min_chunk_size=20,
         )
-        
+
         text = (
             "This is the first paragraph with multiple sentences. "
             "It contains information about various topics. "
@@ -167,9 +166,9 @@ class TestChunkingIntegration:
             "It has different content. "
             "We can have as many sentences as needed."
         )
-        
+
         chunks = service.chunk_text(text, document_id=1)
-        
+
         assert len(chunks) > 0
         for chunk in chunks:
             assert chunk["document_id"] == 1
@@ -181,23 +180,23 @@ class TestChunkingIntegration:
     def test_chunk_text_empty(self):
         """Test chunking of empty document."""
         service = ChunkingService()
-        
+
         chunks = service.chunk_text("", document_id=1)
-        
+
         assert chunks == []
 
     def test_chunk_text_whitespace_only(self):
         """Test chunking of whitespace-only document."""
         service = ChunkingService()
-        
+
         chunks = service.chunk_text("   \n\n   ", document_id=1)
-        
+
         assert chunks == []
 
     def test_chunk_text_preserves_content(self):
         """Test that chunking preserves original content."""
         service = ChunkingService(chunk_size=100)
-        
+
         original_text = (
             "The quick brown fox jumps over the lazy dog. "
             "This is a pangram sentence. "
@@ -206,9 +205,9 @@ class TestChunkingIntegration:
             "We have more content here to chunk. "
             "Final sentence in the text."
         )
-        
+
         chunks = service.chunk_text(original_text, document_id=1)
-        
+
         # Should produce at least one chunk with the lower chunk size
         # (with default chunk_size=500, text may be too small)
         if chunks:
@@ -224,24 +223,24 @@ class TestChunkingEdgeCases:
     def test_chunk_very_long_sentence(self):
         """Test handling of very long sentence (exceeds chunk size)."""
         service = ChunkingService(chunk_size=50, min_chunk_size=10)
-        
+
         # One very long sentence
         long_sentence = "word " * 200  # 200 words
         text = f"{long_sentence}. Next sentence here."
-        
+
         chunks = service.chunk_text(text, document_id=1)
-        
+
         # Should still produce chunks
         assert len(chunks) > 0
 
     def test_chunk_no_sentence_endings(self):
         """Test text without proper sentence endings."""
         service = ChunkingService()
-        
+
         # Text without periods
         text = "This is text\nWith line breaks\nBut no periods"
-        
+
         chunks = service.chunk_text(text, document_id=1)
-        
+
         # Should handle gracefully (may produce one chunk)
         assert len(chunks) >= 0

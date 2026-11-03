@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.config import settings
 from app.models import Base
 
 
@@ -30,12 +29,12 @@ async def db_engine():
         "sqlite+aiosqlite:///:memory:",
         echo=False,
     )
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield engine
-    
+
     await engine.dispose()
 
 
@@ -47,7 +46,7 @@ async def db_session(db_engine):
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
+
     async with async_session_local() as session:
         yield session
 

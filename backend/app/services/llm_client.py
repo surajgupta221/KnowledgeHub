@@ -22,6 +22,10 @@ class CircuitBreakerState(Enum):
     HALF_OPEN = "half_open"  # Testing if service recovered
 
 
+class LlmUnavailableError(Exception):
+    """Raised when the LLM is rate limited, down, or the circuit breaker is open."""
+
+
 class LlmClient:
     """HTTP client for LLM API with streaming support, retry logic, and circuit breaker."""
 
@@ -29,6 +33,7 @@ class LlmClient:
     MAX_RETRIES = 3
     BASE_DELAY = 1.0  # Start with 1 second
     MAX_DELAY = 8.0   # Cap at 8 seconds
+    MAX_RETRY_AFTER = 30.0  # Never sleep longer than this for a Retry-After header
     JITTER_FACTOR = 0.1  # Add ±10% jitter
 
     # Circuit breaker configuration
@@ -44,6 +49,7 @@ class LlmClient:
         timeout: int = 30,
         max_retries: int = MAX_RETRIES,
         circuit_breaker_timeout: float = CIRCUIT_BREAKER_TIMEOUT,
+        api_key: str | None = None,
     ):
         """
         Initialize LLM client with retry and circuit breaker support.
@@ -58,6 +64,7 @@ class LlmClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.circuit_breaker_timeout = circuit_breaker_timeout
+        self._api_key = api_key
 
         # Circuit breaker state
         self._circuit_breaker_state = CircuitBreakerState.CLOSED
@@ -81,7 +88,7 @@ class LlmClient:
         """
         if retry_after:
             try:
-                return float(retry_after)
+                return min(max(float(retry_after), 0.0), self.MAX_RETRY_AFTER)
             except (ValueError, TypeError):
                 pass
 
@@ -128,17 +135,21 @@ class LlmClient:
         return True
 
     def _record_success(self) -> None:
-        """Record successful request; reset circuit breaker if needed."""
+        """Record successful request; failures only count while consecutive."""
         if self._circuit_breaker_state == CircuitBreakerState.HALF_OPEN:
             logger.info("Circuit breaker closed (service recovered)")
             self._circuit_breaker_state = CircuitBreakerState.CLOSED
-            self._circuit_breaker_failures = 0
+        self._circuit_breaker_failures = 0
 
     def _record_failure(self) -> None:
         """Record failure; open circuit breaker if threshold reached."""
         self._circuit_breaker_failures += 1
 
-        if self._circuit_breaker_failures >= self.FAILURE_THRESHOLD:
+        # A failed probe while half-open re-opens the circuit immediately
+        if (
+            self._circuit_breaker_state == CircuitBreakerState.HALF_OPEN
+            or self._circuit_breaker_failures >= self.FAILURE_THRESHOLD
+        ):
             logger.error(
                 "Circuit breaker opened (too many failures)",
                 extra={"failures": self._circuit_breaker_failures},
@@ -178,18 +189,20 @@ class LlmClient:
 
         # Check circuit breaker before attempting
         if not self._check_circuit_breaker():
-            raise Exception("Circuit breaker open; LLM service unavailable")
+            raise LlmUnavailableError("Circuit breaker open; LLM service unavailable")
 
         last_error = None
 
         for attempt in range(self.max_retries + 1):
+            if attempt > 0 and not self._check_circuit_breaker():
+                raise LlmUnavailableError("Circuit breaker open; LLM service unavailable")
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     async with client.stream(
                         "POST",
                         f"{self.base_url}/v1/chat/completions",
                         json=payload,
-                        headers={"Authorization": f"Bearer ****"},
+                        headers={"Authorization": self._auth_header()},
                     ) as response:
                         if response.status_code == 200:
                             # Success: record and yield tokens
@@ -234,7 +247,9 @@ class LlmClient:
                                 },
                             )
                             self._record_failure()
-                            last_error = Exception(f"LLM error {response.status_code}")
+                            last_error = LlmUnavailableError(
+                                f"LLM error {response.status_code}"
+                            )
 
                             # Read retry-after header
                             retry_after = response.headers.get("retry-after")
@@ -255,7 +270,7 @@ class LlmClient:
                                 error_msg,
                                 extra={"status": response.status_code},
                             )
-                            self._record_failure()
+                            # Failure is recorded once by the generic handler below
                             raise Exception(error_msg)
 
             except asyncio.CancelledError:
@@ -275,7 +290,7 @@ class LlmClient:
                     await asyncio.sleep(delay)
                     continue
                 else:
-                    raise
+                    raise LlmUnavailableError("LLM request timed out") from e
 
             except Exception as e:
                 logger.error(
@@ -288,9 +303,12 @@ class LlmClient:
         # Exhausted all retries
         if last_error:
             raise last_error
-        raise Exception("LLM request failed after max retries")
+        raise LlmUnavailableError("LLM request failed after max retries")
+
+    def _auth_header(self) -> str:
+        """Build the Authorization header value (never logged)."""
+        return f"Bearer {self._get_api_key()}"
 
     def _get_api_key(self) -> str:
-        """Get API key from settings (or mock key)."""
-        # TODO: Implement real key retrieval with redaction in logs
-        return settings.llm_api_key or "mock-key"
+        """Get API key from the constructor, settings, or the mock key."""
+        return self._api_key or settings.llm_api_key or "mock-key"

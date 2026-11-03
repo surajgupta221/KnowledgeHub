@@ -93,7 +93,7 @@ class TestLlmClientTimeout:
                 ):
                     pass
             elapsed = time.time() - start
-            
+
             # Should fail quickly (< 1 second, no retries)
             assert elapsed < 1.0
 
@@ -145,17 +145,17 @@ class TestLlmClientCircuitBreaker:
         # Simulate half-open state
         for _ in range(5):
             llm_client._record_failure()
-        
+
         # Fast-track to half-open
         await asyncio.sleep(0.01)  # Small delay
         llm_client._circuit_breaker_open_at = time.time() - 31  # Pretend it's been open
-        
+
         # Check circuit - should transition to half-open
         assert llm_client._check_circuit_breaker() is True
-        
+
         # Simulate success
         llm_client._record_success()
-        
+
         # Should be closed now
         assert llm_client._check_circuit_breaker() is True
         assert llm_client._circuit_breaker_failures == 0

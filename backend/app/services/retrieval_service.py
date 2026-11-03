@@ -3,14 +3,12 @@
 import json
 import logging
 import math
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 
 from app.models.chunk import Chunk
-from app.models.document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +75,9 @@ class RetrievalService:
             return []
 
         try:
+            if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
+                return await self._retrieve_pgvector(query_embedding, document_ids)
+
             # Fetch all chunks from specified documents (with embeddings)
             stmt = (
                 select(Chunk)
@@ -140,6 +141,37 @@ class RetrievalService:
                 },
             )
             raise
+
+    async def _retrieve_pgvector(
+        self, query_embedding: list[float], document_ids: list[int]
+    ) -> list[dict]:
+        """Rank chunks inside Postgres using pgvector cosine distance (<=>)."""
+        stmt = text(
+            "SELECT id, document_id, text, "
+            "1 - (CAST(embedding AS vector) <=> CAST(:q AS vector)) AS similarity "
+            "FROM chunks "
+            "WHERE document_id = ANY(:ids) AND embedding IS NOT NULL "
+            "AND 1 - (CAST(embedding AS vector) <=> CAST(:q AS vector)) >= :thr "
+            "ORDER BY similarity DESC LIMIT :k"
+        )
+        result = await self.db.execute(
+            stmt,
+            {
+                "q": json.dumps(query_embedding),
+                "ids": list(document_ids),
+                "thr": self.similarity_threshold,
+                "k": self.top_k,
+            },
+        )
+        return [
+            {
+                "id": r.id,
+                "document_id": r.document_id,
+                "text": r.text,
+                "similarity": float(r.similarity),
+            }
+            for r in result
+        ]
 
     def _cosine_similarity(
         self, vec1: list[float], vec2: list[float]

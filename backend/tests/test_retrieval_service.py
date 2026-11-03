@@ -2,10 +2,8 @@
 
 import pytest
 import json
-import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.services.retrieval_service import RetrievalService
 from app.models.chunk import Chunk

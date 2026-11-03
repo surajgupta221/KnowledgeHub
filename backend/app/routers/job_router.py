@@ -25,10 +25,8 @@ async def get_job_status(
     job_service = JobService(db)
     job = await job_service.get_job(job_id)
 
-    if not job:
+    # 404 (not 403) so job existence is not revealed across tenants
+    if not job or job.user_id != current_user:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    # TODO: Verify user owns the document this job is for
-    # For now, rely on job_id being opaque enough
 
     return JobStatusResponse.model_validate(job)

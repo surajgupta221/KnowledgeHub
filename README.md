@@ -18,7 +18,7 @@ docker compose up
 This will start:
 - **Backend** (FastAPI): http://localhost:8000
 - **Frontend** (React): http://localhost:5173
-- **Postgres**: localhost:5432
+- **Postgres**: localhost:5433 (container port 5432)
 - **Mock LLM Server**: http://localhost:8001
 
 ### Local Development

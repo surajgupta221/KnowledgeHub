@@ -1,7 +1,6 @@
 """Document router (production quality - refactored from AI-written version)."""
 
 import logging
-from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +10,6 @@ from app.schemas.document_schemas import (
     DocumentResponse,
     DocumentListResponse,
     DocumentUploadRequest,
-    DocumentSummaryResponse,
 )
 from app.services.document_service import DocumentService
 from app.services.job_service import JobService
@@ -196,9 +194,16 @@ async def request_document_summary(
             raise HTTPException(status_code=404, detail="Document not found")
 
         # Enqueue job for background processing
-        from app.workers.job_worker import get_worker
+        from app.workers.job_worker import JobQueueFullError, get_worker
         worker = get_worker()
-        await worker.enqueue_job(job_id)
+        try:
+            await worker.enqueue_job(job_id)
+        except JobQueueFullError:
+            raise HTTPException(
+                status_code=429,
+                detail="Server is busy, try again shortly",
+                headers={"Retry-After": "5"},
+            )
 
         logger.info(
             "Summary job created",

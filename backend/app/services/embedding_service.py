@@ -6,7 +6,6 @@ from typing import Optional
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
 from app.config import settings

@@ -1,7 +1,6 @@
 """Document chunking service for RAG pipeline."""
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

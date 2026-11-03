@@ -16,17 +16,34 @@ from app.repositories.chunk_repository import ChunkRepository
 logger = logging.getLogger(__name__)
 
 
+class JobQueueFullError(Exception):
+    """Raised when the bounded job queue cannot accept more work."""
+
+
 class JobWorker:
     """Async worker that processes jobs from queue."""
 
-    def __init__(self):
-        self.queue: asyncio.Queue = asyncio.Queue()
+    def __init__(self, llm_client: LlmClient | None = None):
+        self.queue: asyncio.Queue = asyncio.Queue(maxsize=settings.job_queue_size)
         self.running = False
-        self.llm_client = LlmClient(settings.mock_llm_url, settings.llm_api_key)
+        self.llm_client = llm_client or LlmClient(
+            settings.mock_llm_url,
+            timeout=settings.llm_timeout_seconds,
+            api_key=settings.llm_api_key,
+        )
+        # Limits simultaneous LLM calls so background jobs cannot starve chat
+        self._llm_semaphore = asyncio.Semaphore(settings.job_max_concurrent_llm_calls)
+        self._tasks: list[asyncio.Task] = []
+
+    def is_full(self) -> bool:
+        return self.queue.full()
 
     async def enqueue_job(self, job_id: int) -> None:
-        """Add job to processing queue."""
-        await self.queue.put(job_id)
+        """Add job to the queue without blocking; raise if full."""
+        try:
+            self.queue.put_nowait(job_id)
+        except asyncio.QueueFull as exc:
+            raise JobQueueFullError("Job queue is full") from exc
 
     async def process_jobs(self) -> None:
         """Main worker loop - processes jobs from queue."""
@@ -55,6 +72,7 @@ class JobWorker:
         except asyncio.CancelledError:
             logger.info("Job worker cancelled")
             self.running = False
+            raise
         except Exception as e:
             logger.exception(f"Job worker crashed: {e}")
             self.running = False
@@ -104,11 +122,12 @@ class JobWorker:
         prompt = f"Summarize this document in 3-5 sentences:\n\n{content[:2000]}"
 
         summary_tokens = []
-        async for token in self.llm_client.stream_completion(
-            [{"role": "user", "content": prompt}],
-            max_tokens=200
-        ):
-            summary_tokens.append(token)
+        async with self._llm_semaphore:
+            async for token in self.llm_client.stream_completion(
+                [{"role": "user", "content": prompt}],
+                max_tokens=200
+            ):
+                summary_tokens.append(token)
 
         return ''.join(summary_tokens)
 
@@ -131,7 +150,6 @@ class JobWorker:
         Returns:
             Number of chunks created
         """
-        from app.repositories.chunk_repository import ChunkRepository
 
         # Step 1: Split into chunks
         chunking_service = ChunkingService()
@@ -166,7 +184,10 @@ class JobWorker:
     async def stop(self) -> None:
         """Stop worker gracefully."""
         self.running = False
-        await self.queue.join()
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks = []
         logger.info("Job worker stopped")
 
 
@@ -185,8 +206,12 @@ def get_worker() -> JobWorker:
 async def start_worker() -> None:
     """Start background worker task."""
     worker = get_worker()
-    asyncio.create_task(worker.process_jobs())
-    logger.info("Worker task created")
+    if not worker._tasks:
+        worker._tasks = [
+            asyncio.create_task(worker.process_jobs())
+            for _ in range(settings.job_worker_count)
+        ]
+    logger.info("Worker tasks created")
 
 
 async def stop_worker() -> None:

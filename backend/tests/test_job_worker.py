@@ -4,11 +4,8 @@ import json
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.job import Job
-from app.models.chunk import Chunk
 from app.models.document import Document
 from app.services.job_service import JobService
-from app.workers.job_worker import JobWorker
 from app.repositories.chunk_repository import ChunkRepository
 
 

@@ -19,14 +19,15 @@ const DocumentList = forwardRef(({ currentUser, onSelectDocument }, ref) => {
       abortControllerRef.current.abort();
     }
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const offset = page * ITEMS_PER_PAGE;
       const response = await fetch(
-        `/api/documents?limit=${ITEMS_PER_PAGE}&offset=${offset}&user=${currentUser}`,
+        `/api/documents/?limit=${ITEMS_PER_PAGE}&offset=${offset}`,
         {
-          signal: abortControllerRef.current.signal,
+          signal: controller.signal,
           headers: {
             'X-User-ID': currentUser,
           },
@@ -42,11 +43,14 @@ const DocumentList = forwardRef(({ currentUser, onSelectDocument }, ref) => {
       setTotalCount(data.total || 0);
     } catch (err) {
       // Abort errors are expected on unmount, don't show them
-      if (err.name !== 'AbortError') {
+      if (err.name !== 'AbortError' && !controller.signal.aborted) {
         setError(err.message || 'Failed to load documents');
       }
     } finally {
-      setLoading(false);
+      // An aborted (superseded or unmounted) request must not touch state
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [currentUser]);
 
@@ -88,6 +92,7 @@ const DocumentList = forwardRef(({ currentUser, onSelectDocument }, ref) => {
     try {
       const response = await fetch(`/api/documents/${docId}`, {
         method: 'DELETE',
+        headers: { 'X-User-ID': currentUser },
       });
 
       if (!response.ok) {

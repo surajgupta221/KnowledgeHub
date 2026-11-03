@@ -3,7 +3,7 @@
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document

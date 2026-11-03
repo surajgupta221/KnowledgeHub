@@ -48,6 +48,9 @@ async def init_db() -> None:
     from app.models import Base
 
     async with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # pgvector ships in the compose image; enable it for similarity search
+            await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.run_sync(Base.metadata.create_all)
 
 

@@ -46,7 +46,7 @@ describe('DocumentList', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=0&user=user_a',
+        '/api/documents/?limit=10&offset=0',
         expect.any(Object)
       );
     });
@@ -173,7 +173,7 @@ describe('DocumentList', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=10&user=user_a',
+        '/api/documents/?limit=10&offset=10',
         expect.any(Object)
       );
     });
@@ -255,7 +255,7 @@ describe('DocumentList', () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        '/api/documents?limit=10&offset=0&user=user_a',
+        '/api/documents/?limit=10&offset=0',
         expect.any(Object)
       );
     });

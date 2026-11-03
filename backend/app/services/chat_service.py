@@ -1,12 +1,15 @@
 """Chat service with streaming and permission checking."""
 
+import json
 import logging
 from typing import AsyncGenerator
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.document_repository import DocumentRepository
-from app.services.llm_client import LlmClient
+from app.schemas.chat_schemas import RagAnswer
+from app.services.llm_client import LlmClient, LlmUnavailableError
 from app.services.embedding_service import EmbeddingService
 from app.services.retrieval_service import RetrievalService
 
@@ -36,7 +39,11 @@ class ChatService:
         self.doc_repository = DocumentRepository(db)
         self.llm_client = llm_client or LlmClient()
         self.embedding_service = embedding_service or EmbeddingService(db)
-        self.retrieval_service = retrieval_service or RetrievalService(db)
+        # Hashed bag-of-words similarity between a short question and a long
+        # chunk is small, so chat uses a low floor; top_k still bounds the context.
+        self.retrieval_service = retrieval_service or RetrievalService(
+            db, similarity_threshold=0.03
+        )
 
     async def verify_document_ownership(
         self, document_ids: list[int], current_user_id: str
@@ -126,12 +133,9 @@ class ChatService:
 
         try:
             async for token in self.llm_client.stream_completion(messages):
-                # Yield SSE event with token
-                event = f'data: {{"event": "token", "data": "{self._escape_json(token)}"}}\n\n'
-                yield event
+                yield self._sse("token", token)
 
-            # Send done event
-            yield 'data: {"event": "done", "data": null}\n\n'
+            yield self._sse("done", None)
             logger.info(
                 "Chat streaming completed",
                 extra={"user_id": current_user_id},
@@ -142,10 +146,70 @@ class ChatService:
                 "Chat streaming error",
                 extra={"user_id": current_user_id, "error": str(e)},
             )
-            error_event = (
-                f'data: {{"event": "error", "data": "{self._escape_json(str(e))}"}}\n\n'
+            # Generic message: never leak internals; LLM outages get a fallback
+            message = (
+                "The AI service is temporarily unavailable. Please try again shortly."
+                if isinstance(e, LlmUnavailableError)
+                else "Stream failed"
             )
-            yield error_event
+            yield self._sse("error", message)
+
+    @staticmethod
+    def _sse(event: str, data: str | None) -> str:
+        """Format one SSE message with proper JSON escaping."""
+        return f"data: {json.dumps({'event': event, 'data': data})}\n\n"
+
+    async def answer_structured(
+        self,
+        question: str,
+        document_ids: list[int],
+        current_user_id: str,
+    ) -> RagAnswer:
+        """
+        Answer using retrieved chunks and enforce a strict JSON schema.
+
+        The LLM output is validated with Pydantic; on invalid output one repair
+        attempt is made before raising ValueError.
+        """
+        if not await self.verify_document_ownership(document_ids, current_user_id):
+            raise ValueError("User does not own all requested documents")
+
+        context = await self._build_context(document_ids, question)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Answer only from the provided context. Respond with ONLY a JSON "
+                    'object: {"answer": str, "confidence": number 0-1, "citations": '
+                    '[{"document_id": int, "chunk_id": int, "quote": str}]}. '
+                    "If the context lacks the answer, say so with confidence 0."
+                ),
+            },
+            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
+        ]
+
+        last_error: Exception | None = None
+        for _ in range(2):
+            raw = "".join([t async for t in self.llm_client.stream_completion(messages)])
+            try:
+                return RagAnswer.model_validate_json(self._extract_json(raw))
+            except ValidationError as exc:
+                last_error = exc
+                messages = messages + [
+                    {"role": "assistant", "content": raw[:2000]},
+                    {
+                        "role": "user",
+                        "content": "That was not valid against the schema. "
+                        "Return ONLY the corrected JSON object.",
+                    },
+                ]
+        raise ValueError("LLM returned invalid structured output") from last_error
+
+    @staticmethod
+    def _extract_json(raw: str) -> str:
+        """Strip code fences / surrounding prose around a JSON object."""
+        start, end = raw.find("{"), raw.rfind("}")
+        return raw[start : end + 1] if start != -1 and end > start else raw
 
     async def _build_context(self, document_ids: list[int], question: str) -> str:
         """
@@ -196,7 +260,3 @@ class ChatService:
                 extra={"error": str(e), "doc_count": len(document_ids)},
             )
             return f"(Error retrieving context: {str(e)})"
-
-    def _escape_json(self, text: str) -> str:
-        """Escape text for JSON string (for SSE data field)."""
-        return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_USER: knowledge_user
       POSTGRES_PASSWORD: knowledge_pass
@@ -53,6 +53,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5173:5173"
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
